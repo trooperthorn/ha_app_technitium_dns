@@ -162,6 +162,37 @@ console. See docs/operations.md, "Enabling encrypted DNS for clients", for
 the exact steps, and `technitium_dns/DOCS.md` for the client-facing port
 table.
 
+## Runtime overlay to clear High CVEs (2026-09-15)
+
+The repository's Security workflow (Grype, `--fail-on high --only-fixed`)
+failed on the first two pushes with six High-severity GHSA advisories
+against `Microsoft.NETCore.App.Runtime.linux-x64` 10.0.9, all fixed in
+10.0.10 or 10.0.11. `technitium/dns-server:15.4.0` (Technitium's own newest
+release, published 2026-07-11, confirmed no newer tag exists as of
+2026-09-15) is built on `mcr.microsoft.com/dotnet/aspnet:10.0` and bundles
+that vulnerable 10.0.9 runtime; Technitium has not published a release
+against a newer runtime yet, so bumping the pinned Technitium tag cannot fix
+this on its own.
+
+Fixed by adding a build stage that pulls
+`mcr.microsoft.com/dotnet/aspnet:10.0.12` (Microsoft's own newest patch as of
+2026-09-15, digest `sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c`,
+confirmed via the MCR registry API) and copies its
+`/usr/share/dotnet/shared/Microsoft.NETCore.App` and
+`/usr/share/dotnet/shared/Microsoft.AspNetCore.App` directories over the
+Technitium image's own, then explicitly removes the old `10.0.9` version
+folders from both (a plain `COPY` over an existing directory adds files, it
+does not delete the ones already there). This patches the .NET runtime in
+place without touching Technitium's own application under
+`/opt/technitium`. It has not been verified by an actual build in this
+session (no local Docker/Grype available); the next CI run on this
+repository's Security workflow is the real verification, and this should be
+re-examined if that run does not come back clean. This is documented as a
+standing exception to remove, not a permanent pattern: once Technitium
+publishes a release built against a runtime newer than 10.0.9, drop this
+overlay stage and go back to pinning Technitium's image alone. See
+`technitium_dns/Dockerfile` for the implementation.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

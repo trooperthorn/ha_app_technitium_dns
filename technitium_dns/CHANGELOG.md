@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.09.15.4
+- Fixed the Security workflow's vulnerability scan failure (six High-severity
+  GHSA advisories against .NET runtime 10.0.9, bundled in Technitium's own
+  newest release). Overlays `mcr.microsoft.com/dotnet/aspnet:10.0.12`'s
+  shared frameworks onto the Technitium image and removes the old 10.0.9
+  version folders. See docs/decisions.md, "Runtime overlay to clear High
+  CVEs".
+
 ## 2026.09.15.3
 - Exposed the standard ports for DNS-over-TLS (853/tcp), DNS-over-HTTPS
   (443/tcp), and DNS-over-QUIC (443/udp), mapped off (`host: null`) by

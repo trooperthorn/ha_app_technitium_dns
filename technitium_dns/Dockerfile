@@ -14,7 +14,39 @@
 # the upstream image and switching users here would break its own first-run
 # file permissions in an unverified way. See docs/security.md, "Container
 # user: unverified / not changed".
+#
+# Technitium 15.4.0 (upstream's own newest release as of 2026-09-15, see
+# docs/decisions.md) is built FROM mcr.microsoft.com/dotnet/aspnet:10.0 and
+# bundles .NET runtime 10.0.9. Six High-severity GHSA advisories against
+# Microsoft.NETCore.App.Runtime.linux-x64 10.0.9 are fixed in 10.0.10/
+# 10.0.11, and Technitium has not yet published a release built against a
+# newer runtime. This stage pulls mcr.microsoft.com/dotnet/aspnet:10.0.12
+# (Microsoft's own newest patch release as of 2026-09-15, superseding both
+# fix versions) so its shared framework files can overwrite the ones baked
+# into the Technitium image below, without waiting on a Technitium release.
+# See docs/decisions.md, "Runtime overlay to clear High CVEs", for the CI
+# scan that surfaced this and how to re-verify or remove this stage once
+# Technitium ships a release built against a current runtime.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.12@sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c AS dotnet-runtime-patch
+
 FROM technitium/dns-server:15.4.0@sha256:df7d90ef0f7b6fff6916d291a7022cd902290cc31c3141d4158b6c375a641b41
+
+# Add the 10.0.12 shared frameworks alongside the existing ones, then
+# remove the vulnerable 10.0.9 version folders explicitly: a plain COPY over
+# an existing directory merges files in rather than replacing the directory,
+# so the old 10.0.9 files would otherwise remain on disk (and still get
+# flagged by the vulnerability scan) even after 10.0.12 is added. .NET's own
+# framework resolution always accepts a newer patch within the same
+# major.minor, regardless of the application's rollForward setting, so
+# removing 10.0.9 once 10.0.12 is present does not require touching
+# Technitium's own runtimeconfig.json. Verify after building: `dotnet --info`
+# inside the container should report only 10.0.12 for both frameworks, and
+# the Security workflow's vulnerability scan should no longer list the
+# Microsoft.NETCore.App.Runtime.linux-x64 10.0.9 GHSA entries.
+COPY --from=dotnet-runtime-patch /usr/share/dotnet/shared/Microsoft.NETCore.App /usr/share/dotnet/shared/Microsoft.NETCore.App
+COPY --from=dotnet-runtime-patch /usr/share/dotnet/shared/Microsoft.AspNetCore.App /usr/share/dotnet/shared/Microsoft.AspNetCore.App
+RUN rm -rf /usr/share/dotnet/shared/Microsoft.NETCore.App/10.0.9 \
+    && rm -rf /usr/share/dotnet/shared/Microsoft.AspNetCore.App/10.0.9
 
 ARG BUILD_VERSION
 ARG BUILD_ARCH
