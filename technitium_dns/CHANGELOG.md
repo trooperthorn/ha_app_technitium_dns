@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.09.15.9
+- Promoted `stage` from `experimental` to `stable`: Sean confirmed a real
+  installation running this app as the household DNS resolver, resolving
+  correctly. See docs/decisions.md. This does not itself upgrade the
+  separately-stated verification status of the Ingress fix, SOC access
+  logging, or AppArmor enforcement -- see their own entries.
+
 ## Unreleased
 - Documentation only, no image/config change: added a worked example for a
   Quad9 global forwarder plus a Conditional Forwarder Zone to an internal

@@ -35,6 +35,6 @@ Then install "Technitium DNS Server" from the Local apps section.
 
 ## Status
 
-`stage: experimental` (see `technitium_dns/config.yaml` and
-`docs/decisions.md`). This app has not yet been run as a household resolver
-in the field.
+`stage: stable` (see `technitium_dns/config.yaml` and `docs/decisions.md`).
+Promoted from `experimental` on 2026-09-15 after a real installation ran it
+as the household DNS resolver and confirmed correct resolution.

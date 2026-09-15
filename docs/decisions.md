@@ -470,6 +470,25 @@ case only. docs/operations.md gives a specific lookup to run to confirm
 this before relying on it, and a fallback (keep a specific VLAN's DHCP Name
 Server on Auto) if it turns out not to work as expected.
 
+## Promoted from `stage: experimental` to `stage: stable` (2026-09-15)
+
+"`stage: experimental` for the first release" above set the condition for
+promotion: a real installation running this app as the household DNS
+resolver, without a regression. Sean confirmed his live install is doing
+exactly that -- resolving DNS correctly for the household -- so
+`technitium_dns/config.yaml` now sets `stage: stable`, bumped as
+`2026.09.15.9`.
+
+This reflects field confirmation of core DNS resolution specifically. It
+does not itself confirm every feature documented since the first release:
+the Ingress web console fix (`2026.09.15.7`), the SOC access logging
+(`2026.09.15.8`), and the AppArmor enforce-mode change (`2026.09.15.6`) each
+carry their own, separately stated verification status in their own
+decisions.md entries and in docs/security.md/docs/operations.md -- promoting
+the app's overall stage does not upgrade those individual caveats, which
+stand on their own until each is confirmed the same way core resolution now
+has been.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

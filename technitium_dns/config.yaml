@@ -1,15 +1,15 @@
 name: "Technitium DNS Server"
 description: "Full-featured, privacy-focused authoritative and recursive DNS server"
-version: "2026.09.15.8"
+version: "2026.09.15.9"
 slug: "technitium_dns"
 init: false
 startup: services
-stage: experimental
+stage: stable
 url: "https://github.com/trooperthorn/ha_app_technitium_dns/"
 
-# stage: experimental because this app has not been field-run yet; see
-# docs/decisions.md. Promote to stable only after a real installation has
-# run it as the household resolver without a regression.
+# Promoted from experimental to stable on 2026-09-15: Sean confirmed a real
+# installation running as the household resolver, resolving DNS correctly.
+# See docs/decisions.md.
 
 arch:
   - aarch64
