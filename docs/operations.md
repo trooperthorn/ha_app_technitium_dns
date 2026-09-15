@@ -54,6 +54,43 @@ other than 53 in the app's Network configuration screen if a conflict on 53
 itself cannot be resolved, though LAN clients would then need to be pointed
 at that alternate port explicitly.
 
+## Enabling encrypted DNS for clients (DoT, DoH, DoQ)
+
+This app maps the standard ports for DNS-over-TLS (853/tcp), DNS-over-HTTPS
+(443/tcp), and DNS-over-QUIC (443/udp) in `technitium_dns/config.yaml`, but
+leaves the host side of each set to `null` (not mapped) by default, and
+mapping the port alone does not turn the protocol on: Technitium has no
+first-run environment variable for any of the three (confirmed against
+`DockerEnvironmentVariables.md` in the upstream repository, read
+2026-09-15), unlike the plain-DNS and recursion/blocking/forwarder settings
+this app's own options do seed. Enabling one is a one-time, in-app step:
+
+1. In this app's Network configuration screen (Supervisor > this app >
+   Network), set the host side of whichever of `853/tcp`, `443/tcp`, or
+   `443/udp` you want to use to the same number (or leave it at the standard
+   number unless something else on the host already holds it).
+2. Log in to Technitium's own web console (via the Ingress panel).
+3. Go to Settings > Optional Protocols (Technitium's own menu path; consult
+   Technitium's documentation at https://technitium.com/dns/ if the exact
+   location has moved in a version newer than what this app pins) and supply
+   a TLS certificate for DoT/DoH/DoQ. This is a separate certificate from
+   the one, if any, used for the web console's own HTTPS -- this app runs
+   the web console over plain HTTP behind Ingress and does not configure
+   one (see docs/decisions.md), so a certificate for encrypted DNS has to be
+   supplied here regardless. A certificate from a public CA is required for
+   phone and desktop OS resolvers to trust it without manual installation; a
+   self-signed certificate works only for clients you configure to trust it
+   explicitly.
+4. Enable the specific protocol(s) you mapped a port for, and confirm from a
+   client that supports it (most current iOS, Android, Windows, and browser
+   DNS clients support DoT and/or DoH) that resolution actually works before
+   relying on it.
+
+Restart the app after step 1 for the port mapping change to take effect;
+steps 2 to 4 take effect immediately in Technitium's own console without a
+restart. If you stop using a protocol, set its host port back to `null` in
+the Network configuration screen so it is not left reachable for nothing.
+
 ## Backup and restore of `/data`
 
 Technitium's entire live state, configuration, zones, and logs live under

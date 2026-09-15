@@ -22,6 +22,20 @@ Net: 5 (base) + 2 (`ingress: true`) = 7, clamped to the documented 1-6 scale's
 maximum, so this app's declared rating is 6 out of 6 -- the ceiling. Ingress
 is the only modifier this app trips.
 
+## Additional encrypted-DNS ports
+
+`technitium_dns/config.yaml` also declares `853/tcp` (DoT), `443/tcp` (DoH),
+and `443/udp` (DoQ), each defaulted to `host: null` (not mapped). apps-cards-
+hacs.md's rating table does not price declared-but-unmapped ports
+differently from ports mapped by default; the rating impact here is nil
+either way. The actual security posture is: until an operator maps one of
+these host ports and separately enables the corresponding protocol with a
+certificate in Technitium's own console, nothing listens there and no
+additional surface exists. Once enabled, that port carries the same
+DNS-resolver trust boundary as port 53 itself, plus whatever the operator's
+chosen TLS certificate is trusted for. See docs/decisions.md and
+docs/operations.md.
+
 ## Why not host_network
 
 `host_network: true` costs -1 on this same scale and grants the container

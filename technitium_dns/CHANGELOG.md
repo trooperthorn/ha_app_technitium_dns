@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.09.15.3
+- Exposed the standard ports for DNS-over-TLS (853/tcp), DNS-over-HTTPS
+  (443/tcp), and DNS-over-QUIC (443/udp), mapped off (`host: null`) by
+  default. Documented the full client-facing port table and the one-time
+  in-app steps to enable each protocol with a certificate in Technitium's
+  own web console. See docs/decisions.md and docs/operations.md.
+
 ## 2026.09.15.2
 - Fixed `run.sh` calling `bashio`, which is not present in this image (this
   app builds `FROM technitium/dns-server`, not a Home Assistant base image);

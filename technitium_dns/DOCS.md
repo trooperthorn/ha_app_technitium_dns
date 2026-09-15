@@ -51,6 +51,23 @@ binds UDP/TCP port 53 (a local DNS resolver, another app, systemd-resolved
 listening on the same interface), the container will fail to start until
 that conflict is resolved. See docs/operations.md.
 
+## Client-facing ports
+
+| Port | Protocol | Default | Notes |
+| --- | --- | --- | --- |
+| 53/tcp, 53/udp | Plain DNS | On, mapped to host port 53 | Standard DNS port; point any client's resolver at this host's address, no special port needed. |
+| 853/tcp | DNS-over-TLS (DoT) | Off (`host: null`) | Standard DoT port. Enable in Technitium's own web console with a certificate first; see "Enabling encrypted DNS for clients" in docs/operations.md. |
+| 443/tcp | DNS-over-HTTPS (DoH) | Off (`host: null`) | Standard DoH port. Same enablement step as DoT. |
+| 443/udp | DNS-over-QUIC (DoQ) | Off (`host: null`) | Standard DoQ port. Same enablement step as DoT. |
+
+All four extra ports use their standard, well-known numbers deliberately, so
+that a client that already knows how to do DoT/DoH/DoQ against any other
+resolver (most current phone, desktop, and browser DNS clients) can point at
+this server with no non-standard port entered anywhere. Mapping a port here
+only makes it reachable from the LAN; it does not turn the protocol on by
+itself. See docs/operations.md for the one-time step to actually enable each
+protocol in Technitium.
+
 ## Web console access
 
 The Technitium web console is reachable only through the Home Assistant

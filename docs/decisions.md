@@ -139,6 +139,29 @@ Shipping straight to enforce without that verification was rejected: an
 untested enforce-mode profile that turns out to be wrong would fail closed
 and take down DNS for the household with no warning.
 
+## Standard ports exposed for encrypted DNS, off by default (2026-09-15)
+
+Sean asked for the DNS ports clients see to be documented and for standard
+encrypted-DNS protocols (DoT, DoH, DoQ) to be supportable without clients
+needing a non-standard port. `technitium_dns/config.yaml` now maps `853/tcp`
+(DoT), `443/tcp` (DoH), and `443/udp` (DoQ) alongside the always-on
+`53/tcp`/`53/udp`, all at their standard, well-known port numbers so a
+client's own default DoT/DoH/DoQ configuration needs no custom port entered.
+
+Unlike the plain-DNS options, none of these three has a first-run
+environment variable in Technitium (confirmed against
+`DockerEnvironmentVariables.md`, read 2026-09-15): enabling a protocol and
+supplying its TLS certificate is done afterward in Technitium's own web
+console, not through this app's options. Because of that, and because an
+open 853/443 port with nothing configured behind it is still attack surface
+for no benefit, all three default their host-side mapping to `null` (not
+mapped) rather than mapping them on by default the way `53/tcp`/`53/udp`
+are. An operator turns one on deliberately: map the port in this app's
+Network screen, then configure the certificate and protocol in Technitium's
+console. See docs/operations.md, "Enabling encrypted DNS for clients", for
+the exact steps, and `technitium_dns/DOCS.md` for the client-facing port
+table.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

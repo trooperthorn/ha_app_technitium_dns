@@ -1,6 +1,6 @@
 name: "Technitium DNS Server"
 description: "Full-featured, privacy-focused authoritative and recursive DNS server"
-version: "2026.09.15.2"
+version: "2026.09.15.3"
 slug: "technitium_dns"
 init: false
 startup: services
@@ -21,12 +21,31 @@ arch:
 # of apps-cards-hacs.md for the -1 host_network scoring this avoids).
 # host: null means "let the installer choose the host port"; Sean's
 # deployment maps it to 53 so LAN clients can resolve through it.
+# 53/tcp and 53/udp are the standard DNS port and are mapped on by default so
+# LAN clients need no special port configuration -- pointing a device's
+# resolver at this host's address is enough, the same as any other DNS
+# server. 853/443 are the standard ports for DNS-over-TLS, DNS-over-HTTPS,
+# and DNS-over-QUIC (encrypted DNS that many current OS and browser
+# resolvers use automatically when offered); they default to host: null
+# (not mapped) because Technitium has no first-run environment variable for
+# these -- turning the protocol on and supplying its TLS certificate is done
+# afterward in Technitium's own web console (see docs/operations.md,
+# "Enabling encrypted DNS for clients"). Mapping the container port here
+# only makes the LAN-facing side available once that in-app step is done;
+# it does nothing on its own. See docs/decisions.md for why these default to
+# off rather than on.
 ports:
   53/tcp: 53
   53/udp: 53
+  853/tcp: null
+  443/tcp: null
+  443/udp: null
 ports_description:
-  53/tcp: "DNS over TCP. Must reach LAN clients that need this server as their resolver."
-  53/udp: "DNS over UDP. Must reach LAN clients that need this server as their resolver."
+  53/tcp: "DNS over TCP (standard port 53). Always needed for this server to act as a resolver."
+  53/udp: "DNS over UDP (standard port 53). Always needed for this server to act as a resolver."
+  853/tcp: "DNS-over-TLS (DoT), standard port 853. Off (host: null) until enabled with a certificate in Technitium's own web console; see docs/operations.md."
+  443/tcp: "DNS-over-HTTPS (DoH), standard port 443. Off (host: null) until enabled with a certificate in Technitium's own web console; see docs/operations.md."
+  443/udp: "DNS-over-QUIC (DoQ), standard port 443. Off (host: null) until enabled with a certificate in Technitium's own web console; see docs/operations.md."
 
 # Web console is Ingress-only; see docs/decisions.md and docs/security.md.
 ingress: true
