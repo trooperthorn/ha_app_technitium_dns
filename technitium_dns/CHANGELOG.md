@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.09.15.5
+- Added a runtime smoke-test job to the Test workflow: builds the image,
+  runs it against a Supervisor-shaped `/data`, waits for the container's own
+  HEALTHCHECK to report healthy, confirms the `.NET` runtime overlay
+  actually landed (10.0.12 present, 10.0.9 gone), and confirms a plain DNS
+  query resolves through the mapped port. Previously CI only confirmed the
+  image builds, not that it starts or serves.
+
 ## 2026.09.15.4
 - Fixed the Security workflow's vulnerability scan failure (six High-severity
   GHSA advisories against .NET runtime 10.0.9, bundled in Technitium's own

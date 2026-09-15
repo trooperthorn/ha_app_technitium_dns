@@ -39,3 +39,87 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build the app image
         run: docker build --tag local/app-technitium-dns:${{ github.sha }} technitium_dns
+
+  image-smoke-test:
+    name: App image installs and starts
+    needs: image-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the app image
+        run: docker build --tag local/app-technitium-dns:${{ github.sha }} technitium_dns
+
+      - name: Run the container with a Supervisor-shaped /data (no HA options set)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/technitium-data
+          echo '{}' > /tmp/technitium-data/options.json
+          docker run -d --name technitium-smoke \
+            -v /tmp/technitium-data:/data \
+            -p 15380:5380 -p 15353:53/tcp -p 15353:53/udp \
+            local/app-technitium-dns:${{ github.sha }}
+
+      - name: Wait for the container to report healthy
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            status="$(docker inspect --format='{{.State.Health.Status}}' technitium-smoke || echo unknown)"
+            echo "attempt $i: $status"
+            if [ "$status" = "healthy" ]; then exit 0; fi
+            if [ "$status" = "unhealthy" ]; then break; fi
+            sleep 5
+          done
+          echo "::error::Container did not report healthy within the wait window"
+          docker logs technitium-smoke || true
+          exit 1
+
+      - name: Confirm the container is still running (did not crash-loop)
+        run: |
+          set -euo pipefail
+          state="$(docker inspect --format='{{.State.Status}}' technitium-smoke)"
+          echo "container state: $state"
+          if [ "$state" != "running" ]; then
+            echo "::error::Container is not running (state: $state)"
+            docker logs technitium-smoke || true
+            exit 1
+          fi
+
+      - name: Confirm the .NET runtime overlay actually landed (10.0.12, no 10.0.9 left)
+        run: |
+          set -euo pipefail
+          docker exec technitium-smoke dotnet --list-runtimes
+          if docker exec technitium-smoke dotnet --list-runtimes | grep -q ' 10\.0\.9 '; then
+            echo "::error::10.0.9 runtime is still present; the overlay in the Dockerfile did not remove it"
+            exit 1
+          fi
+          if ! docker exec technitium-smoke dotnet --list-runtimes | grep -q ' 10\.0\.12 '; then
+            echo "::error::10.0.12 runtime was not found; the overlay in the Dockerfile did not land"
+            exit 1
+          fi
+
+      - name: Confirm plain DNS actually resolves through the mapped port
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends dnsutils
+          for i in $(seq 1 10); do
+            if dig +time=2 +tries=1 @127.0.0.1 -p 15353 example.com A >/tmp/dig.out 2>&1; then
+              cat /tmp/dig.out
+              grep -q "ANSWER SECTION" /tmp/dig.out && exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::DNS query through the mapped port did not return an answer"
+          cat /tmp/dig.out || true
+          docker logs technitium-smoke || true
+          exit 1
+
+      - name: Show the generated first-run admin password line (proves run.sh ran end to end without bashio)
+        run: docker logs technitium-smoke 2>&1 | grep -i "admin password" || true
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker logs technitium-smoke || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f technitium-smoke || true
