@@ -365,6 +365,81 @@ assumes or builds for it. This app's contribution is producing a
 structured, retained, per-user log at a known path; consuming it into an
 audit pipeline is a separate, not-yet-done step.
 
+## Quad9 forwarder and AD conditional zone documented as operator guidance, not app options (2026-09-15)
+
+Sean asked for a concrete setup with Quad9 as the global forwarder and his
+internal Windows AD DNS server (`10.1.23.25`) handled via a Conditional
+Forwarder Zone, plus firewall rules forcing all client DNS through this app.
+This is documented in `docs/operations.md`, "Example: Quad9 global forwarder
+with an internal AD conditional zone" and "Forcing all client DNS through
+this server (firewall/gateway rules)", rather than added as new
+`config.yaml` options, for two reasons: Conditional Forwarder Zones are a
+Technitium web-console feature with no first-run environment variable
+equivalent (same category as the DoT/DoH/DoQ certificate setup already
+documented under "Enabling encrypted DNS for clients"), and the firewall
+rules live entirely outside this app's container, on Sean's gateway/UniFi
+infrastructure, which this app has no ability to configure or verify.
+
+The specific addresses (`10.1.23.25`, the `10.0.0.0/8` range) are Sean's own
+environment, written into the example for concreteness; an operator with a
+different internal DNS server or address range substitutes their own values
+following the same zone-type/protocol pattern. The `forwarders`/
+`forwarder_protocol` options in `technitium_dns/config.yaml` and their
+descriptions in `translations/en.yaml` already carry the general version of
+this guidance (don't set a global forwarder if you need one internal domain
+resolved elsewhere; use a Conditional Forwarder Zone instead) for first-run
+configuration; this decision documents the same pattern applied to an
+already-running instance via the console, plus the network-enforcement half
+that has no config.yaml equivalent at all.
+
+The TCP/443 DoH gap in the firewall guidance (a Layer 4 rule cannot
+distinguish DoH-over-HTTPS from ordinary HTTPS on the same port) is stated
+as an open limitation, not solved: closing it needs application-layer/DPI
+capability on the gateway itself, which was not verified against Sean's
+specific hardware or firmware in this session.
+
+## UCG Fiber / UniFi Network 10.6 firewall guidance verified via web research (2026-09-15)
+
+Sean is on UniFi Network 10.6.106 running a UCG Fiber. The generic
+"UniFi Network terminology" firewall/DNAT guidance in `docs/operations.md`
+was replaced with steps specific to that version and hardware, based on web
+research done in this session: Ubiquiti's own UCG Fiber tech-spec page and
+the UniFi Network 10.6.97 community release notes confirm the UCG Fiber
+supports Network 10.6 with the full zone-based firewall and Policy Engine
+(some older forum threads describe a cut-down feature set on earlier
+UCG-Fiber firmware tied to network application 8.x; that does not apply to
+Sean's current 10.6.106).
+
+Ubiquiti's own help-center pages (`help.ui.com`) returned HTTP 403 to this
+session's automated fetch tool and could not be read directly; the exact
+Policy Engine field labels (Type, NAT Type, Source, Destination, Translated
+IP/Port) documented in `docs/operations.md` are cross-checked from a
+third-party walkthrough (a GitHub Gist documenting the same DNAT-for-DNS
+pattern against UniFi Network 9.4.17) plus Ubiquiti's tech-spec and release-
+notes pages, not a first-party screenshot of the 10.6 UI. This is stated
+explicitly rather than presented as directly verified: if a field name in
+the live UI differs, the underlying rule shape (Destination NAT with
+Source = VLAN, Destination = Any, Translated IP/Port = this app) is what
+matters and should be preserved even if the exact label differs.
+
+The recommendation to redirect (DNAT) plain DNS (port 53) rather than block
+it, while blocking rather than redirecting DoT (853) and DoH/DoQ (443), is
+based on a TLS property (certificate hostname/CA validation), not a UniFi
+limitation: DNAT is invisible to a plain-DNS client since it never
+validates who answered, but a DoT/DoH client's TLS handshake validates the
+resolver's identity, so silently redirecting it to a different server's
+certificate causes a hard validation failure rather than a working
+connection. See `docs/operations.md`, "Why DoT/DoH cannot be silently
+redirected like plain DNS", for the full explanation.
+
+Whether the UCG Fiber's advertised "application-aware layer 7 firewall" and
+"DPI & traffic identification" features can specifically fingerprint and
+block DoH-over-TCP-443 (the one gap a Layer 4 firewall rule cannot close,
+since DoH shares its port with all other HTTPS traffic) was not checked
+against a live UCG Fiber Settings screen in this session; this is flagged
+as something to check in the Policy Engine directly rather than assumed
+either way.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

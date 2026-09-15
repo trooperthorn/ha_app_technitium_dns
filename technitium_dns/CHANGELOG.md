@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+- Documentation only, no image/config change: added a worked example for a
+  Quad9 global forwarder plus a Conditional Forwarder Zone to an internal
+  Windows AD DNS server, and firewall/gateway guidance for forcing client
+  DNS through this app. See docs/operations.md and docs/decisions.md.
+- Documentation only: replaced the generic firewall/DNAT guidance with
+  verified, UCG Fiber-specific UniFi Network 10.6 Policy Engine steps
+  (Destination NAT for port 53, Firewall Rules for blocking 853/443), plus
+  a certificate-acquisition path for DoT/DoH if that's ever pursued. See
+  docs/operations.md and docs/decisions.md.
+
 ## 2026.09.15.8
 - Switched the Ingress reverse proxy to `nginx-light` (confirmed to include
   every module this config uses, smaller footprint than the full `nginx`
