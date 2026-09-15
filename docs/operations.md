@@ -172,6 +172,62 @@ no equivalent option in this app at all (see
 descriptions, for the same guidance aimed at someone configuring first
 start instead of an already-running instance).
 
+## Local UniFi hostname resolution: a Conditional Forwarder Zone back to the gateway
+
+Sean's DHCP leases are issued by the UniFi controller/gateway (a UCG Fiber),
+separately from this app. Pointing DHCP's Name Server option at this app (or
+redirecting client DNS to it via the firewall rules below) is still correct
+and does not depend on who issues DHCP leases -- but it has one consequence
+worth handling deliberately: UniFi's gateway maintains its own internal DNS
+forwarder that answers local hostname lookups for DHCP clients (confirmed
+via Ubiquiti's own documentation and community sources, read 2026-09-15:
+when a client's DHCP negotiation includes its hostname, the gateway pushes
+it into that internal forwarder, qualified under a per-network domain name
+configurable at Settings > Networks > (edit network) > Advanced > Domain
+Name; if never set, UniFi defaults it to `.localdomain`, deliberately not
+`.local`, since `.local` collides with Apple's Bonjour/mDNS resolution on
+Apple devices -- this is genuine unicast DNS the gateway answers, not
+mDNS). That resolution only works for a client actually querying the
+gateway; once a client's DNS traffic goes to this app instead (via DHCP
+Name Server or the DNAT rule below), it stops being able to resolve other
+local device hostnames, since this app has never heard of them.
+
+The fix is the same Conditional Forwarder Zone pattern used for the
+internal Windows AD domain (see "Example: Quad9 global forwarder with an
+internal AD conditional zone" above), pointed at the UniFi gateway instead:
+
+1. Check each VLAN's actual Domain Name value at Settings > Networks >
+   (that network) > Advanced > Domain Name in the UniFi controller --
+   confirm it rather than assuming the `.localdomain` default, since UniFi
+   allows a different domain per network and Sean may have set one
+   explicitly.
+2. In Technitium's console, Zones > Add Zone, once per distinct domain in
+   use:
+   - **Zone Type**: Conditional Forwarder
+   - **Zone Name**: that network's Domain Name value (e.g. `localdomain`)
+   - **Forwarder**: the UniFi gateway's own LAN address on that network
+   - **Protocol**: `Udp`
+3. Verify using Technitium's own DNS Client/lookup tool in its console:
+   query `<a-known-device-hostname>.<domain>` and confirm it resolves via
+   the gateway rather than returning NXDOMAIN.
+
+What step 3 specifically checks and what is not yet confirmed: Ubiquiti's
+own documentation describes this local-hostname resolution from the
+perspective of a LAN client querying the gateway directly. Whether the
+gateway's internal DNS forwarder also answers a query arriving from another
+DNS server acting as a forwarding client (Technitium querying it the same
+way it queries the AD server or Quad9) rather than from an end-user device
+was not confirmed against a source describing that server-to-server case
+specifically. It should work, since Technitium's query still originates
+from an ordinary LAN address the same as any other client, but this has not
+been verified against a live gateway in this session -- run the lookup in
+step 3 before relying on it, and if it returns NXDOMAIN where a direct
+client query to the gateway would have succeeded, the gateway is likely
+scoping answers in a way this conditional zone cannot work around, and
+local hostname resolution for redirected clients would need a different
+approach (such as keeping a specific trusted VLAN's DHCP Name Server on
+`Auto` instead of pointing it at this app).
+
 ## Forcing all client DNS through this server (firewall/gateway rules)
 
 Technitium cannot stop a device from ignoring the DNS server it was handed

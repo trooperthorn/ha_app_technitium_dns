@@ -440,6 +440,36 @@ against a live UCG Fiber Settings screen in this session; this is flagged
 as something to check in the Policy Engine directly rather than assumed
 either way.
 
+## UniFi local-hostname resolution preserved via a Conditional Forwarder Zone (2026-09-15)
+
+Sean pointed out that DHCP leases in his environment are issued by the
+UniFi controller (a UCG Fiber), not this app, and asked whether an
+equivalent zone-forwarding setup was needed on the UniFi side. Researched
+rather than assumed: Ubiquiti's own documentation and community sources
+confirm the UniFi gateway runs a genuine internal DNS forwarder (not
+mDNS/Bonjour) that answers hostname lookups for its own DHCP clients,
+qualified under a per-network Domain Name (Settings > Networks > Advanced,
+default `.localdomain` if never set -- deliberately not `.local`, which
+collides with Apple's Bonjour resolution). That resolution only works for a
+client actually querying the gateway; redirecting client DNS to this app
+(via DHCP Name Server or the DNAT/firewall rules documented above) would
+silently break it, since this app has never heard of those hostnames.
+
+Documented the fix as a Conditional Forwarder Zone in Technitium pointed at
+the UniFi gateway's own LAN address for that network's Domain Name --
+the same pattern already used for the internal Windows AD domain, applied
+to a different upstream. See docs/operations.md, "Local UniFi hostname
+resolution: a Conditional Forwarder Zone back to the gateway".
+
+One piece of this is explicitly flagged as unverified rather than assumed
+solved: whether the UniFi gateway's internal forwarder answers a query
+arriving from another DNS server acting as a forwarding client (as
+Technitium would, in this role) the same way it answers a query from an
+ordinary LAN client device. The sources found describe the client-facing
+case only. docs/operations.md gives a specific lookup to run to confirm
+this before relying on it, and a fallback (keep a specific VLAN's DHCP Name
+Server on Auto) if it turns out not to work as expected.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

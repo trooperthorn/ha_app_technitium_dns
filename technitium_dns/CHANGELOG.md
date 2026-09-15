@@ -10,6 +10,9 @@
   (Destination NAT for port 53, Firewall Rules for blocking 853/443), plus
   a certificate-acquisition path for DoT/DoH if that's ever pursued. See
   docs/operations.md and docs/decisions.md.
+- Documentation only: added a Conditional Forwarder Zone pattern for
+  preserving UniFi's own local-hostname DNS resolution once client DNS is
+  redirected to this app. See docs/operations.md and docs/decisions.md.
 
 ## 2026.09.15.8
 - Switched the Ingress reverse proxy to `nginx-light` (confirmed to include
