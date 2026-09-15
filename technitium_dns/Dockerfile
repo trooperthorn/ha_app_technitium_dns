@@ -58,11 +58,15 @@ LABEL \
 # curl is used by the HEALTHCHECK below. jq parses /data/options.json
 # directly: this image is FROM technitium/dns-server, not a Home Assistant
 # base image, so bashio (an HA base-image-only shell library) is not present
-# here and run.sh must not depend on it. See docs/decisions.md. nginx is the
-# Ingress reverse proxy added below; see docs/decisions.md, "Ingress panel
-# blocked by Technitium's own frame-blocking headers".
+# here and run.sh must not depend on it. See docs/decisions.md. nginx-light
+# is the Ingress reverse proxy added below (see docs/decisions.md, "Ingress
+# panel blocked by Technitium's own frame-blocking headers"); the "-light"
+# Debian package was confirmed to still include the proxy, map, and headers
+# modules this config uses, with a smaller footprint than the full package.
+# logrotate rotates the web console access log; see docs/decisions.md, "Web
+# console access log for SOC audit tracking".
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl jq nginx \
+    && apt-get install -y --no-install-recommends curl jq nginx-light logrotate \
     && rm -rf /var/lib/apt/lists/*
 
 COPY nginx.conf /etc/nginx/nginx.conf

@@ -82,7 +82,14 @@ shutdown), not under a process supervisor. If nginx itself crashes, nothing
 in this container restarts it, and the Dockerfile's `HEALTHCHECK` (which
 curls `127.0.0.1:5380`, i.e. nginx) would start failing -- that is how an
 operator would notice. See docs/decisions.md for why full s6-overlay
-supervision was considered and deferred here.
+supervision was considered and deferred here, and for why nginx (switched
+to the leaner `nginx-light` Debian package) was kept over lighttpd, Caddy,
+or HAProxy.
+
+nginx also writes a per-request access log naming the authenticated Home
+Assistant user for every web console request, for Sean's SOC audit
+tracking; see docs/operations.md, "Web console access log for SOC audit
+tracking", for the log's location, shape, and retention.
 
 ## First-run admin password
 

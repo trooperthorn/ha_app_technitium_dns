@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026.09.15.8
+- Switched the Ingress reverse proxy to `nginx-light` (confirmed to include
+  every module this config uses, smaller footprint than the full `nginx`
+  package). Considered lighttpd, Caddy, and HAProxy instead; kept nginx.
+  See docs/decisions.md.
+- Added a web console access log for SOC audit tracking: one JSON line per
+  Ingress request at `/data/log/nginx/web_console_access.log`, including
+  the authenticated Home Assistant user identity (not just an IP, which is
+  always the Ingress gateway's own address). New
+  `web_console_access_log_retention_days` option (default 90), applied on
+  every start. Rotated daily via a background `logrotate` loop (no cron
+  daemon in this container). See docs/operations.md.
+- Filled in missing `network:` translations for the 853/443 ports (present
+  in `config.yaml` since 2026.09.15.3 but missing from
+  `translations/en.yaml`).
+
 ## 2026.09.15.7
 - Fixed the Ingress panel showing "refused to connect": Technitium's own
   web console sends `X-Frame-Options: DENY` and a CSP with

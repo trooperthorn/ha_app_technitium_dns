@@ -120,6 +120,39 @@ steps 2 to 4 take effect immediately in Technitium's own console without a
 restart. If you stop using a protocol, set its host port back to `null` in
 the Network configuration screen so it is not left reachable for nothing.
 
+## Web console access log for SOC audit tracking
+
+Every request through the Ingress-facing web console is logged as one JSON
+line to `/data/log/nginx/web_console_access.log`, including the Home
+Assistant user identity Ingress attaches after authenticating the viewer
+(`user_id`, `user_name`, `user_display_name` fields, sourced from the
+`X-Remote-User-*` headers Ingress adds), the request method and path,
+response status, and timing. Example line shape:
+
+```json
+{"time":"2026-09-15T18:02:11+00:00","remote_addr":"172.30.32.2","user_id":"abc123","user_name":"homeadmin","user_display_name":"HomeAdmin","method":"GET","uri":"/","status":200,"body_bytes_sent":4021,"request_time":0.014,"user_agent":"Mozilla/5.0 ..."}
+```
+
+`remote_addr` is always the Ingress gateway's own address
+(`172.30.32.2`), not the browser's -- every request nginx sees arrives from
+there, so the `user_*` fields are the actual identifying information for
+"who accessed this," not the IP.
+
+Retention is controlled by the `web_console_access_log_retention_days`
+option (default 90 days) and, unlike this app's other options, applies on
+every start: change it and restart the app to take effect immediately, no
+first-run reseed needed. Rotation runs once a day via a plain background
+loop calling `logrotate` (this container has no cron daemon); rotated files
+are compressed and dated (`web_console_access.log-20260915.gz` style) in
+the same directory.
+
+This file is not automatically wired into any specific SOC ingestion
+pipeline -- see docs/decisions.md, "Web console access log for SOC audit
+tracking", for what that would still require on the `ha_Int_soc` side.
+Until that connection exists, review it directly (via a Home Assistant
+backup, SSH to the host, or Supervisor's `docker exec` into this app's
+container) rather than assuming it already appears anywhere in the SOC UI.
+
 ## Backup and restore of `/data`
 
 Technitium's entire live state, configuration, zones, and logs live under

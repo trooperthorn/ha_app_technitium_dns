@@ -57,7 +57,22 @@ configuration:
     description: >-
       Number of days of log files to keep under this app's data directory.
       Applied on every start.
+  web_console_access_log_retention_days:
+    name: Web Console Access Log Retention (days)
+    description: >-
+      Number of days of the web console's Ingress access log to keep, for
+      the SOC audit trail. Unlike every other option here, this one is
+      applied on every start, not just the first.
 
 network:
   53/TCP: DNS over TCP, for LAN clients using this server as their resolver.
   53/UDP: DNS over UDP, for LAN clients using this server as their resolver.
+  853/TCP: >-
+    DNS-over-TLS (DoT), standard port 853. Off until enabled with a
+    certificate in Technitium's own web console.
+  443/TCP: >-
+    DNS-over-HTTPS (DoH), standard port 443. Off until enabled with a
+    certificate in Technitium's own web console.
+  443/UDP: >-
+    DNS-over-QUIC (DoQ), standard port 443. Off until enabled with a
+    certificate in Technitium's own web console.

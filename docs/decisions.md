@@ -291,6 +291,80 @@ already-documented destructive path: delete the persisted config under
 `/data/etc-dns` and restart so Technitium goes through first start again,
 this time seeded with the nginx-fronted values. See docs/operations.md.
 
+## nginx kept, not switched to lighttpd/Caddy/HAProxy (2026-09-15)
+
+Sean asked whether lighttpd or another server would be a better choice than
+nginx for the Ingress reverse proxy. Kept nginx, switched to the leaner
+`nginx-light` Debian package rather than switching software: `nginx-light`
+was confirmed (Debian package listing, read 2026-09-15) to still include
+the proxy, map, and headers modules this config actually uses (`proxy_pass`,
+the `map` block for the WebSocket `Upgrade` header, `proxy_hide_header`/
+`add_header`), with a smaller footprint (and so a smaller attack surface,
+relevant since this container runs everything as root) than the full
+`nginx` package this app shipped with initially.
+
+The concrete alternatives and why they were not adopted instead:
+
+- **lighttpd**: this app's specific requirement -- strip two response
+  headers, add two replacements, and pass through a WebSocket upgrade for
+  Technitium's live dashboard -- is proven working in CI with the current
+  nginx config (see the "App image installs and starts" job). Re-doing that
+  same header-strip-and-WebSocket combination in lighttpd's own module
+  syntax was not verified this session, and switching a working, tested fix
+  to an unverified one for an already-solved problem was judged not worth
+  the risk for the stated goal (this app needs one thing done reliably, not
+  a smaller binary specifically).
+- **Caddy**: single static binary, memory-safe (Go), and its
+  `reverse_proxy`/`header_up`/`header_down` directives can do the same job
+  more concisely. Not adopted here because Debian does not carry it in the
+  base repos this Dockerfile already uses via `apt-get` (verifying and
+  pinning a separate binary download or third-party apt repo was
+  disproportionate to swapping out a working two-header rewrite), and its
+  automatic-HTTPS/ACM behavior needs explicit disabling for a plain internal
+  `:5380` listener, another thing to get right and verify that nginx's
+  config here already does not need to worry about.
+- **HAProxy**: capable of the same header manipulation and WebSocket
+  pass-through. Not adopted for the same reason as lighttpd: no verified
+  benefit over the nginx config already proven in CI, for the one job this
+  proxy does.
+
+If nginx's own security posture (not this app's use of it) becomes a
+specific concern later, revisit this with a real vulnerability or CVE in
+hand, not as a blanket software swap.
+
+## Web console access log for SOC audit tracking (2026-09-15)
+
+Sean asked for web console access to be logged so it can be tracked in his
+HA SOC audit work. `technitium_dns/nginx.conf` now logs every Ingress
+request as one JSON line to
+`/data/log/nginx/web_console_access.log`, including the Home Assistant user
+identity Ingress attaches to the request after authenticating the viewer
+(`X-Remote-User-Id`, `X-Remote-User-Name`, `X-Remote-User-Display-Name`;
+apps-cards-hacs.md section 1.12) rather than only an IP address: every
+request nginx receives comes from the Ingress gateway itself
+(`172.30.32.2`), so `$remote_addr` alone would not distinguish which HA
+user made a given request, while these headers do.
+
+Retention is controlled by the new `web_console_access_log_retention_days`
+option (default 90), applied on every start (unlike this app's other
+options, which are first-run-only) because `run.sh` regenerates the
+logrotate configuration from the current option value each time it starts,
+rather than baking a fixed value into the image or writing it once during
+first run. `run.sh` also starts a plain daily loop that invokes `logrotate`
+itself, since this container has no cron daemon; the loop dies with the
+container on stop/restart and is recreated on the next start, which is
+fine because logrotate's own state file (`/data/log/nginx/logrotate.state`)
+persists in `/data` across restarts.
+
+What this does not do, stated explicitly rather than left implicit: it does
+not wire this log into any specific HA SOC ingestion mechanism. How (or
+whether) `ha_Int_soc` currently tails or ingests arbitrary app log files
+under `/data` was not verified in this session; connecting this file as an
+actual SOC data source is a task for that side, not something this app
+assumes or builds for it. This app's contribution is producing a
+structured, retained, per-user log at a known path; consuming it into an
+audit pipeline is a separate, not-yet-done step.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile
