@@ -23,10 +23,12 @@ LABEL \
     io.hass.type="app" \
     io.hass.arch="${BUILD_ARCH}"
 
-# curl is used by the HEALTHCHECK below and by run.sh to poll the web
-# console before generating first-run instructions.
+# curl is used by the HEALTHCHECK below. jq parses /data/options.json
+# directly: this image is FROM technitium/dns-server, not a Home Assistant
+# base image, so bashio (an HA base-image-only shell library) is not present
+# here and run.sh must not depend on it. See docs/decisions.md.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl jq \
     && rm -rf /var/lib/apt/lists/*
 
 COPY run.sh /run.sh

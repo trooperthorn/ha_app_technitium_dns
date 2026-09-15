@@ -8,7 +8,7 @@ Base rating: 5 (of 6).
 | --- | --- | --- |
 | `ingress: true` | +2 | Set. |
 | `auth_api` | +1 (overridden by ingress) | Not set. |
-| custom `apparmor.txt` | +1 | Not shipped; default AppArmor profile applies. |
+| custom `apparmor.txt` | +1 | Shipped (`technitium_dns/apparmor.txt`); see "AppArmor profile" below. |
 | `apparmor: false` | -1 | Not set. |
 | `privileged:` capabilities, `kernel_modules` | -1 | Not set. |
 | `hassio_role: manager` | -1 | Not set (`default`). |
@@ -75,6 +75,37 @@ fact: `run.sh` logs a warning when this path is taken, `translations/en.yaml`
 states it in the option's own description, and this file states it here.
 The random-password default exists specifically so an operator does not have
 to take this path at all.
+
+## AppArmor profile
+
+`technitium_dns/apparmor.txt` replaces Home Assistant's generic default app
+profile. It narrows the container's Linux capabilities to the ones this app
+actually uses (`net_bind_service` for port 53, plus `chown`/`dac_override`/
+`fowner`/`setuid`/`setgid` for the first-run ownership work under `/data`)
+and explicitly denies capabilities and operations this app never needs
+(`sys_admin`, `sys_module`, `sys_ptrace`, `sys_rawio`, `net_admin`, `net_raw`,
+`dac_read_search`, `mount`, `umount`, `pivot_root`, tracing other processes).
+It restricts network address families to `inet`/`inet6` stream and dgram
+only -- no raw or packet sockets.
+
+File mediation in that profile is left broad (`file,`) rather than an exact
+path whitelist. This is a deliberate, labeled tradeoff: the .NET runtime's
+own file access pattern (JIT/ReadyToRun caches, ICU data, temp files) was not
+traced against a live running container, and a wrong narrow whitelist fails
+closed -- it would silently break DNS resolution for the whole household
+rather than degrade gracefully. Capability and network-family restrictions
+do not carry that risk, because they can be stated directly from Technitium's
+and .NET's own documented behavior (runs as root, binds UDP/TCP port 53, no
+raw sockets) without needing to observe the running container first.
+
+The shipped profile carries the `complain` flag, so it currently logs
+denials rather than enforcing them. This is unverified in the sense that it
+has not been confirmed clean against a live container: before relying on it
+for actual enforcement, run this app once, check
+`journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'` for entries naming
+profile `technitium_dns`, and only remove the `complain` flag in
+`apparmor.txt` once a normal start and a normal DNS query produce no
+denials. See docs/operations.md for that verification procedure.
 
 ## Container user: unverified / not changed
 

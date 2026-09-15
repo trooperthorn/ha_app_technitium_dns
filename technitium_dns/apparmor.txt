@@ -1,0 +1,84 @@
+#include <tunables/global>
+
+# Custom profile for this app, replacing Home Assistant's generic default app
+# profile (apps-cards-hacs.md section 1.11; profile name must equal the
+# config.yaml slug, "technitium_dns"). This earns the documented +1 on the
+# apps-cards-hacs.md section 1.10 security rating, though this app's rating
+# was already at the documented 1-6 scale's ceiling from `ingress: true`
+# alone; see docs/security.md.
+#
+# Verified paths: /usr/bin/dotnet and /opt/technitium/dns/DnsServerApp.dll,
+# read from the upstream Dockerfile (TechnitiumSoftware/DnsServer/master/
+# Dockerfile, fetched 2026-09-15; see technitium_dns/Dockerfile). This app's
+# own run.sh lives at /run.sh and calls jq and curl (installed via apt-get;
+# see technitium_dns/Dockerfile).
+#
+# File mediation is left broad (`file,`) rather than an exact per-path
+# whitelist: the .NET runtime's own file access pattern (JIT/ReadyToRun
+# caches, ICU data, temp files under a path not confirmed here) was not
+# traced against a live running container, and an incorrect narrow
+# whitelist would fail closed and silently break DNS resolution for the
+# whole household. This is a labeled, deliberate tradeoff, not an
+# oversight -- see docs/security.md, "AppArmor profile". What this profile
+# does tighten, relative to the generic default, is capabilities and
+# network address families, which do not depend on tracing runtime file
+# access and are safe to state from Technitium's and .NET's own documented
+# requirements (root process, binds UDP/TCP port 53, no raw sockets).
+#
+# Ships with the `complain` flag: it logs what it would deny instead of
+# blocking. Before relying on this profile for enforcement, run this app
+# once, inspect `journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'` for
+# entries naming profile "technitium_dns" or "dotnet", and only remove the
+# `complain` flag below once a normal start and a normal DNS query produce
+# no denials. See docs/operations.md.
+
+profile technitium_dns flags=(attach_disconnected,mediate_deleted,complain) {
+  #include <abstractions/base>
+
+  file,
+  signal (send) set=(kill,term,int,hup,cont),
+
+  # DNS resolution needs UDP and TCP over IPv4 and IPv6. No raw sockets, no
+  # packet sockets, no netlink: this app has no reason to touch any of those.
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
+
+  # Port 53 is a privileged port; net_bind_service is the one capability
+  # that requires. chown/dac_override/fowner/setuid/setgid cover the
+  # first-run ownership and permission work run.sh and Technitium's own
+  # first-start initialization perform under /data (chmod 600 on the
+  # password file, Technitium creating its own config tree). The container
+  # still runs as root (see docs/security.md, "Container user"), so these
+  # are capabilities that root already effectively has; listing them
+  # explicitly and denying the rest below narrows what AppArmor actually
+  # permits below the full root capability set Docker's default profile
+  # would otherwise leave available.
+  capability net_bind_service,
+  capability chown,
+  capability dac_override,
+  capability fowner,
+  capability setuid,
+  capability setgid,
+
+  # Explicitly denied: capabilities and operations this app has no
+  # legitimate use for, whether or not Docker's own default capability drop
+  # already excludes them. Defense in depth, not a claim that Docker's
+  # default set was insufficient.
+  deny capability sys_admin,
+  deny capability sys_module,
+  deny capability sys_ptrace,
+  deny capability sys_rawio,
+  deny capability net_admin,
+  deny capability net_raw,
+  deny capability dac_read_search,
+  deny mount,
+  deny umount,
+  deny pivot_root,
+  deny ptrace (trace),
+
+  # This app's own persistent state: DNS zone/config data, logs, and the
+  # generated admin password file (see docs/security.md).
+  /data/** rw,
+}

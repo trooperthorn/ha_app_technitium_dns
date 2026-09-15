@@ -85,6 +85,60 @@ toggle for that: the consequence is disproportionate to the convenience,
 and an operator who genuinely wants to reseed should do it deliberately.
 See `docs/operations.md`.
 
+## Security audit findings and fixes (2026-09-15)
+
+A post-scaffold security audit found `run.sh` calling `bashio::config` and
+`bashio::log.*`, which do not exist in this image: `bashio` is a shell
+library only present in Home Assistant's own Alpine base images, and this
+app is built `FROM technitium/dns-server`, Microsoft's `dotnet/aspnet`
+Debian-based image, on purpose (see "Fresh build" above). As shipped, the
+container would have failed at startup with `bashio: command not found`
+before ever reaching Technitium. Fixed by rewriting `run.sh` to read
+`/data/options.json` directly with `jq` (added to `technitium_dns/Dockerfile`
+alongside `curl`) and to log with plain timestamped `echo`/`printf` instead
+of `bashio::log.*`. The behavior `run.sh` implements did not change, only
+how it reads options and logs.
+
+Confirmed during the same audit: DNS resolution uses the standard port 53
+(tcp and udp), mapped directly from container to host with no offset or
+alternate port, so LAN clients and devices resolve against this server the
+same way they would against any other DNS server, with no non-standard port
+configuration required on the client side. See `technitium_dns/config.yaml`
+`ports:` and docs/operations.md, "Port 53 conflicts", for the one case this
+does not cover (something else on the host already holding port 53).
+
+## Custom AppArmor profile, shipped in complain mode (2026-09-15)
+
+Sean asked for AppArmor to be as secure as possible. Home Assistant's
+generic default app profile applied by default already provides baseline
+confinement, but a custom `technitium_dns/apparmor.txt` (profile name
+matching the `slug`) narrows Linux capabilities to what this app actually
+uses (`net_bind_service` for port 53, plus the ownership-related
+capabilities `run.sh` and Technitium's first-run initialization need under
+`/data`), explicitly denies capabilities and operations this app has no
+legitimate use for (`sys_admin`, `sys_module`, `sys_ptrace`, `sys_rawio`,
+`net_admin`, `net_raw`, `dac_read_search`, `mount`, `umount`, `pivot_root`,
+tracing other processes), and restricts network address families to
+`inet`/`inet6` stream and dgram only.
+
+File mediation in the profile stays broad (`file,`) rather than an exact
+path whitelist, because the .NET runtime's file access pattern was not
+traced against a live running container and a wrong narrow whitelist fails
+closed, silently breaking DNS resolution for the household. This is stated
+explicitly in `apparmor.txt` and `docs/security.md`, not left implicit.
+
+The profile ships with the `complain` flag rather than enforcing
+immediately, because it has not been verified against a live installation
+in this session (no running Home Assistant instance with this app installed
+was available to test against). `complain` mode still earns the
+apps-cards-hacs.md section 1.10 `+1` rating for shipping a custom profile,
+logs any denial instead of blocking it, and gives Sean a concrete
+verification step (`docs/operations.md`, "Verifying and enforcing the
+AppArmor profile") to run before switching it to actual enforcement.
+Shipping straight to enforce without that verification was rejected: an
+untested enforce-mode profile that turns out to be wrong would fail closed
+and take down DNS for the household with no warning.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

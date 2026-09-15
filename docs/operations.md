@@ -64,6 +64,31 @@ export/import step. Restoring a backup restores Technitium to exactly the
 state it was in when the backup was taken, admin password and zones
 included.
 
+## Verifying and enforcing the AppArmor profile
+
+`technitium_dns/apparmor.txt` ships in `complain` mode (see docs/security.md,
+"AppArmor profile"): it logs what it would deny rather than blocking it, so
+the resolver cannot be broken by an untested profile. To move it to actual
+enforcement:
+
+1. Install and start this app normally, with the options you intend to run.
+2. Let it run through a first start (admin password generated, zones
+   configured if any) and issue a handful of normal DNS queries against it
+   from a LAN client.
+3. On the Home Assistant host, check for denials:
+   `journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'`. Look for entries
+   naming profile `technitium_dns`.
+4. If there are none, edit `technitium_dns/apparmor.txt` to remove
+   `complain` from the profile's `flags=(...)` line, rebuild, and reinstall.
+   If there are denials, they name the exact capability or operation that
+   was blocked; decide whether to add it to the profile or whether it
+   indicates something unexpected is happening, before enforcing.
+
+This app does not enforce the profile by default specifically because that
+verification has not yet been done against a live installation; see
+docs/security.md for why file access mediation in this profile stays broad
+even after this step.
+
 ## HEALTHCHECK limitation
 
 The Dockerfile's `HEALTHCHECK` only confirms the web console's HTTP port
