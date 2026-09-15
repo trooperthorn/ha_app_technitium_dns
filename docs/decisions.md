@@ -219,6 +219,78 @@ failing to start or failing first-run initialization rather than as an
 obvious AppArmor error. See docs/operations.md, "AppArmor: enforcing without
 live verification, and how to recover", for what to do if that happens.
 
+## Ingress panel blocked by Technitium's own frame-blocking headers (2026-09-15)
+
+After Sean installed this app on a real Home Assistant host, the Ingress
+sidebar panel showed "refused to connect" when clicked, even though the app
+itself was healthy: `curl http://127.0.0.1:5380/` from inside the container
+returned a clean `200`, and no AppArmor denials appeared anywhere. Two
+earlier theories (first checked and ruled out) were an AppArmor denial and
+a Kestrel/.NET keep-alive incompatibility with Supervisor's aiohttp-based
+Ingress proxy suggested by Supervisor's own log
+(`Stream error ... Cannot write to closing transport`, sourced from
+home-assistant/supervisor issues #5248 and the matching community thread).
+Both were wrong.
+
+The actual cause, found by comparing against
+`staerk-ha-addons/addon-technitium-dns` (an existing community add-on for
+the same server, which Sean asked to compare against precisely because this
+symptom needed a working reference to diagnose against): Technitium's own
+web console sends `X-Frame-Options: DENY` and a Content-Security-Policy
+with `frame-ancestors 'none'`. Home Assistant Ingress embeds every app's UI
+in an iframe on the HA frontend's own origin; a page that refuses all
+framing makes the browser refuse to render it there, and Chrome reports
+that specific failure as the page "refused to connect" -- which reads as a
+network failure but is actually a framing policy rejection. This explains
+every piece of evidence: the app was never broken, only embeddable-in-an-
+iframe was.
+
+`staerk-ha-addons/addon-technitium-dns` solves this with an nginx reverse
+proxy in front of Technitium that strips those two headers and replaces
+them with `X-Frame-Options: SAMEORIGIN` and a CSP allowing
+`frame-ancestors 'self'` -- same-origin framing only, not framing removed
+outright, so cross-origin clickjacking protection is preserved. This app
+adopts the same fix: `technitium_dns/nginx.conf` defines that proxy,
+listening on 5380 (this app's declared `ingress_port`) and forwarding to
+Technitium on `127.0.0.1:5381` (moved off 5380 and bound to loopback only,
+see `run.sh`). `DNS_SERVER_WEB_SERVICE_REVERSE_PROXY_ADDRESSES` changed
+from the Ingress gateway's own address (`172.30.32.2`) to `127.0.0.1`,
+because nginx, not the Ingress gateway, is now what connects to Technitium
+directly.
+
+That reference add-on runs full s6-overlay process supervision (a
+dedicated `ingress` service, restarted independently if it dies) and
+`host_network: true` with a dynamic `ingress_port: 0`, read at runtime via
+`bashio::app.ingress_port`. This app does not adopt either: it keeps its
+fixed `ingress_port: 5380` and its explicit-`ports:`-instead-of-
+`host_network` design (see "Explicit ports: mapping instead of
+host_network" above), and starts nginx as a plain backgrounded process in
+`run.sh` before `exec`-ing Technitium (which stays PID 1, so it still gets
+a direct, timely SIGTERM on shutdown). The accepted tradeoff: if nginx
+itself crashes, nothing in this container restarts it automatically, and
+Technitium keeps running underneath with the Ingress panel now broken
+again in the same way. The Dockerfile's `HEALTHCHECK` (curls
+`127.0.0.1:5380`, i.e. nginx) would then start reporting unhealthy, which
+is how an operator would notice. Adopting full s6-overlay for proper
+supervision of both processes was considered and deferred as
+disproportionate to a two-process container; revisit if nginx reliability
+becomes an actual observed problem, not a theoretical one.
+
+### Migration for the install already running when this landed
+
+Sean's install had already completed Technitium's first start under the
+old configuration (port 5380, direct, before this fix) by the time this was
+found. Because Technitium's `DNS_SERVER_*` environment variables only take
+effect before a configuration file exists (see "No automatic 'wipe and
+reseed' option" above), the persisted config from that first run would
+still tell Technitium to listen on 5380 -- directly conflicting with nginx,
+which this fix also binds to 5380. Since nothing had actually been
+configured through that first, broken run (the web console was never
+reachable to configure anything), the fix for that specific install is the
+already-documented destructive path: delete the persisted config under
+`/data/etc-dns` and restart so Technitium goes through first start again,
+this time seeded with the nginx-fronted values. See docs/operations.md.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

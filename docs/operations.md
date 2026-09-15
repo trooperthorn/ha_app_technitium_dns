@@ -1,5 +1,34 @@
 # Operations
 
+## If you installed before 2026.09.15.7: reset the persisted config once
+
+Versions before `2026.09.15.7` had Technitium listen directly on port 5380,
+which Home Assistant Ingress could reach but could never actually display:
+Technitium's web console sends framing-blocking headers that make the
+browser refuse to embed it in Ingress's iframe (see docs/decisions.md,
+"Ingress panel blocked by Technitium's own frame-blocking headers"). If you
+installed and started this app before that version, Technitium already
+persisted a configuration file with port 5380 baked in, which now conflicts
+with `2026.09.15.7`'s nginx reverse proxy (also on 5380) -- the container
+will not start cleanly on top of that old configuration.
+
+Since a pre-`2026.09.15.7` install could never actually reach the web
+console to configure anything real (that was the whole bug), the fix is the
+same destructive reset described in "Option changes after first boot do not
+apply" below, done once:
+
+1. Stop the app.
+2. Delete the persisted configuration: remove `/data/etc-dns` (and
+   `/data/admin_password`, so a fresh one gets generated and logged again)
+   from this app's data directory.
+3. Update to `2026.09.15.7` or later and start the app. It goes through
+   first start again, this time seeded with the nginx-fronted values, and
+   generates a new admin password.
+
+If you had already configured real zones or settings through Technitium's
+console before hitting this (unlikely, since the console was unreachable),
+back up `/data` first; this reset discards anything under `/data/etc-dns`.
+
 ## Retrieving the first-run admin password
 
 If the `admin_password` option was left blank, `run.sh` generates a random

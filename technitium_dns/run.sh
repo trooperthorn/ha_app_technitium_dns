@@ -108,13 +108,27 @@ export DNS_SERVER_LOG_MAX_LOG_FILE_DAYS="$(config_value 'log_max_log_file_days' 
 # Ingress termination decisions (see docs/decisions.md): the web console
 # listens on plain HTTP behind Ingress, which terminates TLS itself and
 # authenticates the viewer before this app ever sees the request.
+#
+# Technitium listens on 5381, loopback only, not port 5380: nginx (started
+# below) owns 5380, the port this app's config.yaml declares as
+# `ingress_port`, and proxies to Technitium on 5381. This exists because
+# Technitium's own web console sends X-Frame-Options: DENY and a CSP with
+# frame-ancestors 'none', which stop Home Assistant Ingress from embedding
+# it in its iframe at all -- confirmed against a live install on 2026-09-15;
+# see docs/decisions.md, "Ingress panel blocked by Technitium's own
+# frame-blocking headers", and technitium_dns/nginx.conf for the fix.
 export DNS_SERVER_WEB_SERVICE_ENABLE_HTTPS="false"
-export DNS_SERVER_WEB_SERVICE_HTTP_PORT="5380"
+export DNS_SERVER_WEB_SERVICE_HTTP_PORT="5381"
+export DNS_SERVER_WEB_SERVICE_LOCAL_ADDRESSES="127.0.0.1"
 
-# 172.30.32.2 is Home Assistant's documented Ingress gateway address
-# (apps-cards-hacs.md section 1.12); without this, Technitium's own
-# reverse-proxy trust check would reject every Ingress-forwarded request.
-export DNS_SERVER_WEB_SERVICE_REVERSE_PROXY_ADDRESSES="172.30.32.2"
+# nginx, not Home Assistant's Ingress gateway, is now what connects to
+# Technitium directly (both are in the same container, over loopback), so
+# 127.0.0.1 is the address Technitium's own reverse-proxy trust check needs
+# to see, not the Ingress gateway's own address.
+export DNS_SERVER_WEB_SERVICE_REVERSE_PROXY_ADDRESSES="127.0.0.1"
+
+log_info "Starting the Ingress reverse proxy (nginx) on port 5380."
+nginx
 
 log_info "Handing off to Technitium DNS Server (config directory: ${CONFIG_DIR})."
 exec /usr/bin/dotnet /opt/technitium/dns/DnsServerApp.dll "$CONFIG_DIR"

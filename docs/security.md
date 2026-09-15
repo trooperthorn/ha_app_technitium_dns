@@ -49,20 +49,40 @@ apps-cards-hacs.md section documents as the ordinary way apps expose a port.
 Core directly; this app has no equivalent requirement, so it does not carry
 that same cost.
 
-## Ingress-only web console
+## Ingress-only web console, fronted by an internal nginx proxy
 
 `ingress: true` with `ingress_port: 5380` puts the entire web console behind
 Home Assistant's own authentication. Per apps-cards-hacs.md section 1.12,
-only connections from `172.30.32.2` (the Ingress gateway) reach the app, and
-the app itself performs no authentication of its own for that path -- Home
-Assistant already authenticated the user before proxying the request.
-`run.sh` sets `DNS_SERVER_WEB_SERVICE_REVERSE_PROXY_ADDRESSES=172.30.32.2` so
-Technitium's own reverse-proxy trust check accepts the forwarded requests,
-and `DNS_SERVER_WEB_SERVICE_ENABLE_HTTPS=false` because Ingress already
-terminates TLS; running a second, self-signed TLS layer behind it would add
-nothing an attacker on the loopback path couldn't already see, and would add
-a second certificate operators would have to manage for no benefit. Port
-5380 itself is not mapped to any host port; see `technitium_dns/config.yaml`.
+only connections from `172.30.32.2` (the Ingress gateway) reach this
+container on port 5380, and the app itself performs no authentication of
+its own for that path -- Home Assistant already authenticated the user
+before proxying the request. Port 5380 itself is not mapped to any host
+port; see `technitium_dns/config.yaml`.
+
+As of `2026.09.15.7`, port 5380 inside the container is nginx
+(`technitium_dns/nginx.conf`), not Technitium directly. This exists because
+Technitium's own web console sends `X-Frame-Options: DENY` and a CSP with
+`frame-ancestors 'none'`, which stop a browser from ever rendering it
+inside Ingress's iframe -- confirmed against a live install on 2026-09-15;
+see docs/decisions.md, "Ingress panel blocked by Technitium's own
+frame-blocking headers". nginx proxies to Technitium on `127.0.0.1:5381`
+(loopback only, never mapped to any port) and replaces those two headers
+with `X-Frame-Options: SAMEORIGIN` and a CSP allowing `frame-ancestors
+'self'` -- same-origin framing only, not framing removed outright, so
+cross-origin clickjacking protection is preserved. `run.sh` sets
+`DNS_SERVER_WEB_SERVICE_REVERSE_PROXY_ADDRESSES=127.0.0.1` accordingly
+(nginx, not the Ingress gateway, is what connects to Technitium directly
+now), and `DNS_SERVER_WEB_SERVICE_ENABLE_HTTPS=false` because Ingress
+already terminates TLS; running a second, self-signed TLS layer behind it
+would add nothing an attacker on the loopback path couldn't already see.
+
+nginx runs as a plain backgrounded process started by `run.sh` before it
+`exec`s Technitium (which stays PID 1 for a direct, timely SIGTERM on
+shutdown), not under a process supervisor. If nginx itself crashes, nothing
+in this container restarts it, and the Dockerfile's `HEALTHCHECK` (which
+curls `127.0.0.1:5380`, i.e. nginx) would start failing -- that is how an
+operator would notice. See docs/decisions.md for why full s6-overlay
+supervision was considered and deferred here.
 
 ## First-run admin password
 
@@ -91,6 +111,16 @@ The random-password default exists specifically so an operator does not have
 to take this path at all.
 
 ## AppArmor profile
+
+Only the Ingress-facing web console (port 5380) goes through nginx; plain
+DNS (53/tcp, 53/udp) and the optional encrypted-DNS ports (853/tcp,
+443/tcp, 443/udp) go directly to Technitium with no nginx involved (nginx
+is an HTTP reverse proxy, and DNS is not HTTP). When Sean's live install
+showed the Ingress panel failing, AppArmor was checked and ruled out first
+(no denial entries, and `curl` to Technitium's own loopback port succeeded)
+before the actual cause -- Technitium's frame-blocking headers, see
+"Ingress-only web console, fronted by an internal nginx proxy" above -- was
+found.
 
 `technitium_dns/apparmor.txt` replaces Home Assistant's generic default app
 profile. It narrows the container's Linux capabilities to the ones this app

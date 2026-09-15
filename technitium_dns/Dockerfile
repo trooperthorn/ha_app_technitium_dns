@@ -58,17 +58,22 @@ LABEL \
 # curl is used by the HEALTHCHECK below. jq parses /data/options.json
 # directly: this image is FROM technitium/dns-server, not a Home Assistant
 # base image, so bashio (an HA base-image-only shell library) is not present
-# here and run.sh must not depend on it. See docs/decisions.md.
+# here and run.sh must not depend on it. See docs/decisions.md. nginx is the
+# Ingress reverse proxy added below; see docs/decisions.md, "Ingress panel
+# blocked by Technitium's own frame-blocking headers".
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl jq \
+    && apt-get install -y --no-install-recommends curl jq nginx \
     && rm -rf /var/lib/apt/lists/*
 
+COPY nginx.conf /etc/nginx/nginx.conf
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
-# Upstream's own web console has no unauthenticated status route; this
-# checks that the port is accepting TCP connections, not that DNS
-# resolution or the admin API are healthy. See docs/operations.md.
+# Port 5380 is now nginx (the Ingress reverse proxy), not Technitium
+# directly; Technitium itself listens on the internal-only 5381 (see
+# run.sh). A 200 here confirms both nginx and the upstream Technitium
+# console it proxies to are responding; it does not confirm DNS resolution
+# or the admin API. See docs/operations.md.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS -o /dev/null http://127.0.0.1:5380/ || exit 1
 

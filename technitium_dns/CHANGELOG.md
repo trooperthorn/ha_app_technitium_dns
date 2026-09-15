@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026.09.15.7
+- Fixed the Ingress panel showing "refused to connect": Technitium's own
+  web console sends `X-Frame-Options: DENY` and a CSP with
+  `frame-ancestors 'none'`, which block Home Assistant Ingress from
+  embedding it in an iframe at all. Added an nginx reverse proxy
+  (`technitium_dns/nginx.conf`) in front of the web console (only the web
+  console; DNS traffic is unaffected) that replaces those headers with
+  same-origin-only framing. Technitium now listens on loopback-only 5381
+  instead of 5380. See docs/decisions.md.
+- **If you installed a version before this one**, see docs/operations.md,
+  "If you installed before 2026.09.15.7: reset the persisted config once",
+  before updating -- the old persisted configuration conflicts with this
+  version's port layout.
+
 ## 2026.09.15.6
 - Enforced `technitium_dns/apparmor.txt` (removed the `complain` flag) at
   Sean's explicit direction. This has not been verified against a live

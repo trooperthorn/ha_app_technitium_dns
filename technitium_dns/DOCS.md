@@ -72,4 +72,14 @@ protocol in Technitium.
 
 The Technitium web console is reachable only through the Home Assistant
 Ingress panel (the sidebar entry this app adds). It is not exposed on any
-host port. See docs/security.md and docs/decisions.md for why.
+host port. Internally, an nginx reverse proxy handles that path (not
+Technitium directly) because Technitium's own web console blocks being
+framed by anything, which Ingress requires; only the web console goes
+through nginx -- DNS traffic on every port above talks to Technitium
+directly. See docs/security.md and docs/decisions.md for why.
+
+If you installed this app before version `2026.09.15.7`, see
+docs/operations.md, "If you installed before 2026.09.15.7: reset the
+persisted config once" -- the Ingress panel did not work at all before that
+version, and updating on top of the old configuration needs one manual
+reset step.
