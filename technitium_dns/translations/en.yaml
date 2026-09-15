@@ -44,14 +44,27 @@ configuration:
   forwarders:
     name: Forwarders
     description: >-
-      Comma-separated list of upstream forwarder addresses. Leave blank to
-      resolve recursively instead of forwarding. Read only on first start.
+      Comma-separated list of upstream forwarder addresses, applied
+      globally to every query this server does not answer authoritatively.
+      Leave this blank if most of your traffic is internet lookups and you
+      only need one internal domain (e.g. a Windows AD domain) resolved by
+      another server: setting Forwarders here would send ALL queries,
+      internet included, to these addresses instead of letting this server
+      resolve them itself. For a single internal domain, add a Conditional
+      Forwarder zone in Technitium's own web console after first start
+      instead (Zones > Add Zone > Conditional Forwarder) -- it forwards only
+      that domain's queries and leaves everything else to this server's own
+      recursion. Read only on first start.
   forwarder_protocol:
     name: Forwarder Protocol
     description: >-
-      Protocol used to reach the configured forwarders: Udp, Tcp, Tls, Https,
-      or HttpsJson. Only used when Forwarders is set. Read only on first
-      start.
+      Protocol used to reach the addresses in Forwarders above: Udp, Tcp,
+      Tls, Https, or HttpsJson. Only used when Forwarders is set, and only
+      applies to that global forwarder list, not to any Conditional
+      Forwarder zone configured separately in Technitium's own web console
+      (each such zone picks its own protocol there; Udp is the usual choice
+      for an internal server like a Windows AD DNS server on the same LAN).
+      Read only on first start.
   log_max_log_file_days:
     name: Log Retention (days)
     description: >-
