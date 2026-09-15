@@ -193,6 +193,32 @@ publishes a release built against a runtime newer than 10.0.9, drop this
 overlay stage and go back to pinning Technitium's image alone. See
 `technitium_dns/Dockerfile` for the implementation.
 
+## AppArmor: enforced without live verification (2026-09-15)
+
+`technitium_dns/apparmor.txt` shipped with a `complain` flag (see "Custom
+AppArmor profile, shipped in complain mode" above) specifically because
+enforcing an untested custom profile can fail closed and take down DNS for
+the household with no clear error. Sean asked to enforce it now that it's
+"verified"; the actual verification available in this session was a CI
+smoke test (`.github/workflows/test.yml`, added the same day) that runs the
+built image with a plain `docker run` and confirms it starts, reports
+healthy, and resolves DNS. That smoke test does not exercise this profile
+at all: a plain `docker run` never attaches a custom AppArmor profile: only
+Home Assistant Supervisor does that, by loading `apparmor.txt` and applying
+it via the AppArmor LSM when it installs the app.
+
+This was surfaced explicitly before making the change, not silently
+assumed. Sean's answer, given that gap, was to enforce anyway rather than
+wait for a live Supervisor install to check
+`journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'` against, so the
+`complain` flag was removed from `technitium_dns/apparmor.txt` on that
+explicit instruction. This is an accepted risk, not a completed
+verification: if Technitium or `run.sh` need something this profile denies,
+the first real install is where that will surface, most likely as the app
+failing to start or failing first-run initialization rather than as an
+obvious AppArmor error. See docs/operations.md, "AppArmor: enforcing without
+live verification, and how to recover", for what to do if that happens.
+
 ## Container user not changed (2026-09-15)
 
 Technitium's own Dockerfile

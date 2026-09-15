@@ -25,14 +25,23 @@
 # access and are safe to state from Technitium's and .NET's own documented
 # requirements (root process, binds UDP/TCP port 53, no raw sockets).
 #
-# Ships with the `complain` flag: it logs what it would deny instead of
-# blocking. Before relying on this profile for enforcement, run this app
-# once, inspect `journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'` for
-# entries naming profile "technitium_dns" or "dotnet", and only remove the
-# `complain` flag below once a normal start and a normal DNS query produce
-# no denials. See docs/operations.md.
+# Enforcing as of 2026-09-15 at Sean's explicit direction, without the
+# journalctl verification against a live Supervisor install described above
+# and in docs/operations.md: the CI smoke test added the same day exercises
+# the container's function (starts, resolves DNS, correct runtime) but runs
+# it with a plain `docker run`, which never attaches this custom profile at
+# all -- only Supervisor does that, by loading apparmor.txt and applying it
+# through the AppArmor LSM. So enforcement here has not actually been
+# observed against a real install; this is a deliberate, accepted risk, not
+# a completed verification. See docs/decisions.md, "AppArmor: enforced
+# without live verification". If Technitium fails to start, fails first-run
+# initialization under /data, or fails to bind port 53 after this app is
+# installed, check `journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'`
+# for entries naming profile "technitium_dns" before assuming an unrelated
+# cause, and reintroduce the `complain` flag below if this profile is the
+# problem.
 
-profile technitium_dns flags=(attach_disconnected,mediate_deleted,complain) {
+profile technitium_dns flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
   file,

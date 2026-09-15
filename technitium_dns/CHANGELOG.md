@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.09.15.6
+- Enforced `technitium_dns/apparmor.txt` (removed the `complain` flag) at
+  Sean's explicit direction. This has not been verified against a live
+  Home Assistant Supervisor install; see docs/decisions.md, "AppArmor:
+  enforced without live verification", and docs/operations.md for what to
+  check if the app fails to start or initialize after this change.
+
 ## 2026.09.15.5
 - Added a runtime smoke-test job to the Test workflow: builds the image,
   runs it against a Supervisor-shaped `/data`, waits for the container's own

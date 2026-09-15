@@ -101,30 +101,37 @@ export/import step. Restoring a backup restores Technitium to exactly the
 state it was in when the backup was taken, admin password and zones
 included.
 
-## Verifying and enforcing the AppArmor profile
+## AppArmor: enforcing without live verification, and how to recover
 
-`technitium_dns/apparmor.txt` ships in `complain` mode (see docs/security.md,
-"AppArmor profile"): it logs what it would deny rather than blocking it, so
-the resolver cannot be broken by an untested profile. To move it to actual
-enforcement:
+`technitium_dns/apparmor.txt` enforces as of 2026-09-15 (no `complain` flag),
+at Sean's explicit direction, without ever having been checked against a
+real Home Assistant Supervisor install. The CI smoke test that runs this
+image (`.github/workflows/test.yml`) uses a plain `docker run`, which never
+attaches this custom profile at all -- only Supervisor does that. So if
+something this profile denies turns out to be something Technitium or
+`run.sh` actually needs, the first real installation is where that would
+surface, and it would surface as the container failing to start, failing
+first-run initialization under `/data`, or failing to bind port 53 -- not as
+a clear "AppArmor" error from Home Assistant's own UI.
 
-1. Install and start this app normally, with the options you intend to run.
-2. Let it run through a first start (admin password generated, zones
-   configured if any) and issue a handful of normal DNS queries against it
-   from a LAN client.
-3. On the Home Assistant host, check for denials:
+If any of that happens after installing this app:
+
+1. On the Home Assistant host, check for denials:
    `journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'`. Look for entries
    naming profile `technitium_dns`.
-4. If there are none, edit `technitium_dns/apparmor.txt` to remove
-   `complain` from the profile's `flags=(...)` line, rebuild, and reinstall.
-   If there are denials, they name the exact capability or operation that
-   was blocked; decide whether to add it to the profile or whether it
-   indicates something unexpected is happening, before enforcing.
+2. If there are denial entries, they name the exact capability or file
+   operation that was blocked. Add the narrowest fix for that specific
+   entry to `technitium_dns/apparmor.txt` (or reintroduce the `complain`
+   flag on the profile's `flags=(...)` line as an immediate unblock while
+   you work out the right fix), rebuild, and reinstall.
+3. If there are no denial entries and the app still fails, the problem is
+   not AppArmor; look at the container's own logs
+   (Supervisor > this app > Log) before anything else.
 
-This app does not enforce the profile by default specifically because that
-verification has not yet been done against a live installation; see
+This app does not claim the enforce-mode profile has been proven correct;
+see docs/decisions.md, "AppArmor: enforced without live verification", and
 docs/security.md for why file access mediation in this profile stays broad
-even after this step.
+regardless.
 
 ## HEALTHCHECK limitation
 

@@ -112,14 +112,27 @@ do not carry that risk, because they can be stated directly from Technitium's
 and .NET's own documented behavior (runs as root, binds UDP/TCP port 53, no
 raw sockets) without needing to observe the running container first.
 
-The shipped profile carries the `complain` flag, so it currently logs
-denials rather than enforcing them. This is unverified in the sense that it
-has not been confirmed clean against a live container: before relying on it
-for actual enforcement, run this app once, check
-`journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'` for entries naming
-profile `technitium_dns`, and only remove the `complain` flag in
-`apparmor.txt` once a normal start and a normal DNS query produce no
-denials. See docs/operations.md for that verification procedure.
+The profile enforces (no `complain` flag) as of 2026-09-15, at Sean's
+explicit direction, without the live-install verification described below
+having actually been performed. A CI smoke test added the same day (see
+`.github/workflows/test.yml`) runs the built image with a plain `docker
+run` and confirms it starts, reports healthy, and resolves DNS -- but a
+plain `docker run` never attaches this custom profile at all; only Home
+Assistant Supervisor does that, by loading `apparmor.txt` and applying it
+through the AppArmor LSM when it installs the app. So enforcement has not
+been observed against a real install, and this is a known, accepted gap,
+not a completed verification. See docs/decisions.md, "AppArmor: enforced
+without live verification".
+
+If this app fails to start, fails first-run initialization under `/data`,
+or fails to bind port 53 after installing it, check
+`journalctl _TRANSPORT="audit" -g 'apparmor="DENIED"'` on the Home Assistant
+host for entries naming profile `technitium_dns` before assuming an
+unrelated cause. If this profile is the problem, reintroduce the `complain`
+flag in `apparmor.txt`, redeploy, and use the same `journalctl` command with
+a real install running to find and add whatever it's missing, rather than
+broadening `file,` or capability grants speculatively. See docs/operations.md
+for the full procedure this was meant to have gone through first.
 
 ## Container user: unverified / not changed
 
