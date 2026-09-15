@@ -1,0 +1,41 @@
+# Syntax, lint, and image build gate; release.yml calls it so the same checks gate every release.
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Syntax and lint (Python 3.14)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Shell syntax check
+        run: bash -n technitium_dns/run.sh
+      - name: Validate YAML
+        run: |
+          pip install pyyaml
+          python -c "
+          import yaml
+          for f in ['technitium_dns/config.yaml', 'repository.yaml']:
+              with open(f, encoding='utf-8') as fh:
+                  yaml.safe_load(fh)
+              print(f, 'OK')
+          "
+
+  image-build:
+    name: App image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the app image
+        run: docker build --tag local/app-technitium-dns:${{ github.sha }} technitium_dns

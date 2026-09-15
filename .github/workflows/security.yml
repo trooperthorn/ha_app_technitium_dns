@@ -1,0 +1,40 @@
+# Static and image security checks on every push, pull request, and weekly; see docs/security.md.
+name: Security
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 7 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  shell-security:
+    name: ShellCheck app scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Only genuine errors block; see docs/operations.md "CI gate thresholds".
+      - name: Check shell programs
+        run: shellcheck --shell=bash --severity=error --exclude=SC1091 technitium_dns/run.sh
+
+  app-image-security:
+    name: App image build and vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the app image
+        run: docker build --tag local/app-technitium-dns:${{ github.sha }} technitium_dns
+      # only-fixed narrows the gate to fixable findings; see docs/security.md.
+      - name: Scan installed OS packages
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: local/app-technitium-dns:${{ github.sha }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+          grype-version: v0.110.0

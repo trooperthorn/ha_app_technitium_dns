@@ -1,0 +1,63 @@
+configuration:
+  dns_server_domain:
+    name: DNS Server Domain
+    description: >-
+      Fully qualified domain name this server uses to identify itself. Read
+      only on first start; changing it later has no effect. Leave blank to
+      use Technitium's own default.
+  admin_password:
+    name: Initial Admin Password
+    description: >-
+      Optional. Used only to set the initial admin account on first start.
+      Leave blank to have the app generate a random password and log it once;
+      see the app documentation for how to retrieve it. Read only on first
+      start; changing it later has no effect. Stored in Supervisor's option
+      file in plaintext for the life of the install if you set it here.
+  prefer_ipv6:
+    name: Prefer IPv6
+    description: >-
+      Use IPv6 for outbound queries whenever possible. Read only on first
+      start.
+  recursion:
+    name: Recursion Policy
+    description: >-
+      Who this server will resolve recursive queries for: Allow (everyone),
+      Deny (authoritative only), AllowOnlyForPrivateNetworks, or
+      UseSpecifiedNetworkACL (see Recursion Network ACL). Read only on first
+      start.
+  recursion_network_acl:
+    name: Recursion Network ACL
+    description: >-
+      Comma-separated list of IP addresses or networks allowed to make
+      recursive queries. Only used when Recursion Policy is
+      UseSpecifiedNetworkACL. Read only on first start.
+  enable_blocking:
+    name: Enable Blocking
+    description: >-
+      Enable domain blocking using the Blocked Zone and any configured block
+      lists. Read only on first start.
+  block_list_urls:
+    name: Block List URLs
+    description: >-
+      Comma-separated list of block list URLs to subscribe to. Only used
+      when Enable Blocking is on. Read only on first start.
+  forwarders:
+    name: Forwarders
+    description: >-
+      Comma-separated list of upstream forwarder addresses. Leave blank to
+      resolve recursively instead of forwarding. Read only on first start.
+  forwarder_protocol:
+    name: Forwarder Protocol
+    description: >-
+      Protocol used to reach the configured forwarders: Udp, Tcp, Tls, Https,
+      or HttpsJson. Only used when Forwarders is set. Read only on first
+      start.
+  log_max_log_file_days:
+    name: Log Retention (days)
+    description: >-
+      Number of days of log files to keep under this app's data directory.
+      Applied on every start.
+
+network:
+  53/TCP: DNS over TCP, for LAN clients using this server as their resolver.
+  53/UDP: DNS over UDP, for LAN clients using this server as their resolver.

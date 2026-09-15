@@ -1,0 +1,69 @@
+name: "Technitium DNS Server"
+description: "Full-featured, privacy-focused authoritative and recursive DNS server"
+version: "2026.09.15.1"
+slug: "technitium_dns"
+init: false
+startup: services
+stage: experimental
+url: "https://github.com/trooperthorn/ha_app_technitium_dns/"
+
+# stage: experimental because this app has not been field-run yet; see
+# docs/decisions.md. Promote to stable only after a real installation has
+# run it as the household resolver without a regression.
+
+arch:
+  - aarch64
+  - amd64
+
+# No host_network. DNS on port 53 is the only thing that needs to leave the
+# container, and an explicit ports: mapping does that without granting the
+# host's whole network namespace (see docs/decisions.md, and section 1.10
+# of apps-cards-hacs.md for the -1 host_network scoring this avoids).
+# host: null means "let the installer choose the host port"; Sean's
+# deployment maps it to 53 so LAN clients can resolve through it.
+ports:
+  53/tcp: 53
+  53/udp: 53
+ports_description:
+  53/tcp: "DNS over TCP. Must reach LAN clients that need this server as their resolver."
+  53/udp: "DNS over UDP. Must reach LAN clients that need this server as their resolver."
+
+# Web console is Ingress-only; see docs/decisions.md and docs/security.md.
+ingress: true
+ingress_port: 5380
+panel_icon: mdi:dns
+panel_title: "Technitium DNS"
+
+# Explicit device/API grants stay unset: no hassio_api, no homeassistant_api,
+# no docker_api, no full_access, no privileged capabilities. Do NOT set
+# apparmor: false.
+
+map:
+  - data:rw
+
+options:
+  dns_server_domain: ""
+  admin_password: ""
+  prefer_ipv6: false
+  recursion: "AllowOnlyForPrivateNetworks"
+  recursion_network_acl: ""
+  enable_blocking: false
+  block_list_urls: ""
+  forwarders: ""
+  forwarder_protocol: "Udp"
+  log_max_log_file_days: 7
+
+schema:
+  dns_server_domain: str?
+  # See docs/security.md: this is used only to seed a first-run password
+  # file, never stored back into config.yaml plaintext by this app. Leave
+  # blank to let the app generate a random password on first start.
+  admin_password: password?
+  prefer_ipv6: bool
+  recursion: list(Allow|Deny|AllowOnlyForPrivateNetworks|UseSpecifiedNetworkACL)
+  recursion_network_acl: str?
+  enable_blocking: bool
+  block_list_urls: str?
+  forwarders: str?
+  forwarder_protocol: list(Udp|Tcp|Tls|Https|HttpsJson)
+  log_max_log_file_days: int(1,365)

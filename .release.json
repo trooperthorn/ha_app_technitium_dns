@@ -1,0 +1,8 @@
+{
+  "tag_prefix": "v",
+  "timezone": "America/Chicago",
+  "release_paths": ["technitium_dns"],
+  "version_fields": [
+    {"path": "technitium_dns/config.yaml", "kind": "regex", "pattern": "^version:\\s*\"([^\"]+)\"", "template": "version: \"{version}\""}
+  ]
+}
