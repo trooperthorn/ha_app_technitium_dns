@@ -1,5 +1,37 @@
 # Operations
 
+## Automated upstream sync
+
+`sync-upstream.yml` runs daily (09:23 UTC) and on manual dispatch, checking
+Docker Hub for a newer stable `technitium/dns-server` tag or a re-published
+digest on the current tag. When something moved, `scripts/sync_upstream.py`
+rewrites the pin in `technitium_dns/Dockerfile` (the `FROM` line and its
+header comment), and the workflow pushes `automation/upstream-sync` and opens
+an auto-merging PR. If the tag itself moved, the PR body also flags a manual
+review: whether the `.NET` runtime-overlay stage (see the Dockerfile's
+"Runtime overlay to clear High CVEs" comment) is still needed against the new
+Technitium image, since that judgment call is not automated. The chain after
+merge: `release.yml` runs, `prepare-release.yml` bumps CalVer on
+`technitium_dns/config.yaml`, that PR merges, and Home Assistant offers the
+new version.
+
+Like `prepare-release.yml`, this workflow mints a short-lived token from the
+release GitHub App: repository variable `RELEASE_AUTOMATION_CLIENT_ID` and
+secret `RELEASE_AUTOMATION_PRIVATE_KEY`. **Neither is configured on this
+repository yet** (`gh variable list` / `gh secret list` both return nothing as
+of 2026-09-22) -- the App must be installed here (see
+`~/.claude/skills/ha-dev-current` inventory notes on the other repos it is
+already installed on for the install/verify steps) before this workflow can
+open PRs; until then it fails at the "Verify release-automation credentials
+are configured" step whenever it detects a change, without touching the repo.
+
+Manual check or apply, without waiting for the schedule:
+
+```bash
+python scripts/sync_upstream.py --check   # report only
+python scripts/sync_upstream.py           # apply, then commit on a branch
+```
+
 ## If you installed before 2026.09.15.7: reset the persisted config once
 
 Versions before `2026.09.15.7` had Technitium listen directly on port 5380,
