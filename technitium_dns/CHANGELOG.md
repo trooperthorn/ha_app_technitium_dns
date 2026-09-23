@@ -8,7 +8,9 @@
   logging, or AppArmor enforcement -- see their own entries.
 
 ## Unreleased
-- Documentation only, no image/config change: added a worked example for a
+-- Technitium DNS Server 15.4.0 -> 15.5.0
+- Review the runtime-overlay rationale comments in the Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether technitium/dns-server:15.5.0 still bundles a vulnerable .NET runtime, and whether the overlay's own pinned aspnet patch version is still the newest available.
+ Documentation only, no image/config change: added a worked example for a
   Quad9 global forwarder plus a Conditional Forwarder Zone to an internal
   Windows AD DNS server, and firewall/gateway guidance for forcing client
   DNS through this app. See docs/operations.md and docs/decisions.md.
