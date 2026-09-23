@@ -1,6 +1,6 @@
 name: "Technitium DNS Server"
 description: "Full-featured, privacy-focused authoritative and recursive DNS server"
-version: "2026.09.15.9"
+version: "2026.09.23.1"
 slug: "technitium_dns"
 init: false
 startup: services
