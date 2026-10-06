@@ -3,9 +3,9 @@
 # there is nothing this app adds to the container besides the first-run
 # password seeding and the option-to-environment translation in run.sh.
 #
-# Pinned tag: technitium/dns-server:15.5.1
-# Digest (linux/amd64 manifest list, read from Docker Hub 2026-09-26):
-#   sha256:b8efe03a5e3bdc6e9d2baff3f6e70c382c7f98afa2a7ca66f318d4b58a8d5944
+# Pinned tag: technitium/dns-server:15.6.0
+# Digest (linux/amd64 manifest list, read from Docker Hub 2026-10-05):
+#   sha256:1045db38fd2f2e4d9578f9168b7eb4862575469ed0ffc79e03f36bdc772a93b5
 # See docs/decisions.md for how this tag was chosen and how to re-verify it.
 #
 # Upstream's own Dockerfile (TechnitiumSoftware/DnsServer, read 2026-09-15)
@@ -29,7 +29,7 @@
 # Technitium ships a release built against a current runtime.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.12@sha256:2d584d8147faddb0d678c5748d47953e5b8e18621ed4fb7049a91381d9d7746f AS dotnet-runtime-patch
 
-FROM technitium/dns-server:15.5.1@sha256:b8efe03a5e3bdc6e9d2baff3f6e70c382c7f98afa2a7ca66f318d4b58a8d5944
+FROM technitium/dns-server:15.6.0@sha256:1045db38fd2f2e4d9578f9168b7eb4862575469ed0ffc79e03f36bdc772a93b5
 
 # Add the 10.0.12 shared frameworks alongside the existing ones, then
 # remove the vulnerable 10.0.9 version folders explicitly: a plain COPY over
