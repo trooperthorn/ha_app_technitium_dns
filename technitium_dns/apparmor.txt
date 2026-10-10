@@ -49,6 +49,12 @@ profile technitium_dns flags=(attach_disconnected,mediate_deleted) {
 
   # DNS resolution needs UDP and TCP over IPv4 and IPv6. No raw sockets, no
   # packet sockets, no netlink: this app has no reason to touch any of those.
+  # These rules mediate address family and socket type, not port numbers,
+  # so they already cover every listener in this container (DNS on 53,
+  # nginx on 5380 and 5382, Technitium's loopback-only 5381); the read-only
+  # monitoring API listener added on 2026-10-10 needed no change here.
+  # Which ports are reachable from outside the container is decided by
+  # `ports:` in config.yaml, not by this profile.
   network inet stream,
   network inet dgram,
   network inet6 stream,

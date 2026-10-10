@@ -502,3 +502,147 @@ session. This app does not add a `USER` directive of its own, because
 without verifying how upstream's own first-run file creation behaves,
 risked breaking that first-run path in an unverified way. See
 `docs/security.md`, "Container user: unverified / not changed".
+
+## Read-only monitoring API on a second listener, not a mapped console port (2026-10-10)
+
+The Observe monitor (`C:\Users\sean.LAB\repos\observe`; `TechnitiumCheck`
+in `observe/checks/apps.py`, `TechnitiumMonitor` in `observe/config.py`,
+both read 2026-10-10) polls Technitium's HTTP API with a view-only user's
+token sent as `Authorization: Bearer <token>` (or as `?token=` when its
+`token_in_query` option is set). It reads exactly two paths:
+`/api/dashboard/stats/get` with `type=LastHour|LastDay` and `utc=true`
+(`mode: stats`), and `/api/user/checkForUpdate` (`mode: update`). Its
+target is `host`, `port` (default 5380), and `https` (default false); it has
+no path-prefix setting and no way to hold a Home Assistant session, so it
+cannot reach this app through Ingress at all.
+
+Three ways to give it a path were weighed:
+
+- **Map 5380 under `ports:`.** Rejected. That is the whole console: every
+  write API (zones, settings, users, token creation, config backup) would
+  become reachable from the LAN behind nothing but Technitium's own
+  password, reversing "Web console: Home Assistant Ingress only, not a host
+  port" above with no compensating benefit for a monitor that needs two
+  read-only calls.
+- **Drop Ingress and serve the console on a host port.** Rejected for the
+  same reason, plus it loses Home Assistant's authentication in front of
+  the console and the `+2` rating that comes with `ingress: true`.
+- **A second nginx listener that proxies an explicit allow-list.** Chosen.
+  `technitium_dns/nginx.conf` gained a `server` block on container port
+  5382 that proxies three exact paths to Technitium on `127.0.0.1:5381`
+  and answers 403 to every other path. `config.yaml` declares `5382/tcp:
+  null` under `ports:` so it is off until the operator maps it. Port 5380
+  is still never listed under `ports:`, and the Ingress block is unchanged
+  apart from a `listener` field in its log line.
+
+What the allow-list contains and why: the two paths Observe calls, plus
+`/api/user/session/get`. Technitium validates a token on every call, so no
+separate "validate" path is required; `session/get` is included because it
+is the one read-only call that distinguishes "token wrong" from "token valid
+but the user lacks Dashboard: View" when setting a monitor up, and it
+reveals only the calling session's own user and permission table (and
+echoes the token the caller already holds). Permissions were read from
+`APIDOCS.md` at upstream tag `v15.6.0` (the pinned version): `Get Stats`
+requires Dashboard: View; `Check For Update` and `Get Session Info` list
+`PERMISSIONS: None` (a valid session only). The obsolete aliases
+`/api/getStats` and `/api/checkForUpdate` are not allow-listed.
+
+Each proxied location writes the upstream path out literally
+(`proxy_pass http://127.0.0.1:5381/api/dashboard/stats/get$is_args$args`)
+rather than forwarding the request URI as the client sent it, so Technitium
+can only ever receive one of the three normalized paths; the query string
+(including `type=`, `utc=`, and a legacy `token=`) passes through unchanged,
+and so does the `Authorization` header. nginx holds no secret and does no
+authentication of its own.
+
+Bearer support was verified, not assumed: upstream `APIDOCS.md` at
+`v15.6.0` states "Starting from version 15.0, the HTTP API requires passing
+bearer session token using the `Authorization` header", with the `token`
+query/form parameter kept "for backward compatibility"; upstream
+`CHANGELOG.md` records the header arriving with 15.0 (15.0.1 released
+26 April 2026), and `DnsServerCore/DnsWebService.cs` at the same tag
+(`GetAuthorizationToken`) reads the `Bearer` header first and falls back to
+the `token` parameter. The pinned image is 15.6.0, so Observe's default
+`token_in_query: false` is correct and documented as such. An invalid token
+is answered with HTTP 200 and `"status":"invalid-token"`, which Observe
+maps to "authentication rejected (invalid-token)".
+
+Controls layered in front of Technitium on this listener, each labeled for
+what it is:
+
+- **Source address filter** (`allow` RFC 1918, RFC 4193 ULA, link-local,
+  loopback; `deny all`): defense in depth so a port-forward from the
+  internet to this host port exposes nothing even with a valid token. Not
+  the primary boundary; the token is. It relies on `$remote_addr` being the
+  real LAN client, which is what Docker's DNAT port mapping delivers; this
+  was not observed on a live Home Assistant OS host in this session (see
+  the verification note below).
+- **Rate limit** (`limit_req`, 2 requests/second per address, burst 10,
+  429 on rejection): Observe polls once a minute by default and re-checks
+  every 10 s after a miss, so this is far above legitimate use while
+  keeping a leaked token from hammering the API. `checkForUpdate` is cheap
+  to serve regardless: `WebServiceApi.cs` caches the upstream answer for
+  3600 s, so polling it does not fan out to Technitium's update server.
+  The 403 fence is not throttled; `return` runs in an earlier nginx phase
+  than `limit_req` and costs no backend work.
+- **Logging**: same JSON file as the Ingress log, same field set, with
+  `"listener":"monitoring_api"`. The `user_*` fields are empty literals on
+  purpose: nothing authenticates `X-Remote-User-*` on this path, so copying
+  them from the request would let a LAN client write any name into the
+  audit trail. `remote_addr` is the identity here. The logged URI is the
+  normalized path plus the query string with any `token=` or `pass=` value
+  replaced by `REDACTED`, because the legacy query form would otherwise put
+  a live token in a file kept for 90 days.
+
+Module availability: the earlier "nginx kept" entry calls `nginx-light` a
+Debian package. The CI image build log of 2026-10-08 shows the apt sources
+are `archive.ubuntu.com ... noble` and the package is `nginx-light
+1.24.0-2ubuntu7.18`, a metapackage over the single `nginx` binary; the
+upstream `technitium/dns-server` image is built on
+`mcr.microsoft.com/dotnet/aspnet:10.0`, whose Linux tags for 10.0.12 are
+Ubuntu noble, Ubuntu resolute, Alpine, and Azure Linux (no Debian tag
+exists for 10.0.12). Ubuntu's `debian/rules` for that package
+(1.24.0-2ubuntu7.18, read from the archive 2026-10-10) passes no
+`--without-*` flag, so the default-compiled `ngx_http_limit_req_module`,
+`ngx_http_access_module`, and `ngx_http_map_module` are all present. The
+CI smoke test now runs `nginx -t` inside the started container, which is
+the executable form of that claim.
+
+AppArmor: no change. `technitium_dns/apparmor.txt` mediates address family
+and socket type (`network inet stream`, and so on), not port numbers, so the
+rules that already cover 5380 cover 5382; a comment in the profile now says
+so. Which ports leave the container is decided by `ports:` in `config.yaml`.
+
+Rating: unchanged at the documented ceiling. The apps security rating prices
+privileges (`host_network`, `full_access`, API roles, capabilities), not
+`ports:` mappings, so declaring or mapping 5382 moves nothing. That is a
+statement about the Supervisor's scoring; the real exposure once mapped is
+stated in `docs/security.md` ("Read-only monitoring API listener"), with the
+recommendation to restrict reachability of that host port to the monitoring
+host with a management-VLAN firewall rule.
+
+Default host port recommendation: 5380. Observe's discovery scans
+`technitium_port: 5380` by default (`observe/config.py`), so mapping
+container 5382 to host 5380 lets discovery find it without extra
+configuration, and it is the port number Technitium's own documentation
+uses for its API. Any free host port works; the Observe `port` value just
+has to match.
+
+What is verified and what is not. The CI smoke test (`.github/workflows/
+test.yml`, plain `docker run`) proves: `nginx -t` passes with both server
+blocks; the Ingress listener still answers 200 with `X-Frame-Options:
+SAMEORIGIN` and `frame-ancestors 'self'`; a list of non-allow-listed paths
+(including `/api/user/login`, `/api/user/createToken`, `/api/admin/
+sessions/list`, `/api/dashboard/stats/getTop`, the obsolete aliases, a
+trailing-slash variant, and an upper-case variant) answers 403; the three
+allow-listed paths reach Technitium and come back `invalid-token` with a
+bad token; a real token minted through the Ingress port works through the
+allow-list in both header and query form and still gets 403 on
+`/api/zones/list`; a burst answers 429; and the log carries both `listener`
+values, a `token=REDACTED` line, and never the token value. Not verified
+in this session, because no live Home Assistant host was available: that
+`$remote_addr` on a Supervisor-managed install is the LAN client address
+(the private-source filter and the log's usefulness both assume it), that
+the AppArmor profile is quiet with the new listener under Supervisor, and
+Observe polling the mapped port end to end. The first live install is where
+those are checked; `docs/operations.md` gives the exact curl calls.

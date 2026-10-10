@@ -89,3 +89,9 @@ network:
   443/UDP: >-
     DNS-over-QUIC (DoQ), standard port 443. Off until enabled with a
     certificate in Technitium's own web console.
+  5382/TCP: >-
+    Read-only monitoring API for Observe or similar tools. Off until
+    mapped; typically map it to host port 5380. Serves only an allow-list
+    of read-only Technitium API paths (dashboard stats, update check,
+    session info) and Technitium's own user token is still required on
+    every call. The web console is not served here; it stays Ingress-only.

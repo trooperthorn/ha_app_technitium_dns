@@ -54,9 +54,11 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/technitium-data
           echo '{}' > /tmp/technitium-data/options.json
+          # 15382 is the read-only monitoring API listener (container 5382),
+          # mapped here the way an operator would map it; see docs/operations.md.
           docker run -d --name technitium-smoke \
             -v /tmp/technitium-data:/data \
-            -p 15380:5380 -p 15353:53/tcp -p 15353:53/udp \
+            -p 15380:5380 -p 15382:5382 -p 15353:53/tcp -p 15353:53/udp \
             local/app-technitium-dns:${{ github.sha }}
 
       - name: Wait for the container to report healthy
@@ -115,6 +117,138 @@ jobs:
 
       - name: Show the generated first-run admin password line (proves run.sh ran end to end without bashio)
         run: docker logs technitium-smoke 2>&1 | grep -i "admin password" || true
+
+      # ---- nginx: both listeners. The container runs as root, so nginx -t
+      # can open the log file under /data that the config names.
+      - name: nginx configuration parses (both server blocks, limit_req zone, maps)
+        run: docker exec technitium-smoke nginx -t
+
+      - name: Ingress listener behaviour is unchanged (200, same-origin framing headers)
+        run: |
+          set -euo pipefail
+          curl -sS -D /tmp/ingress.h -o /dev/null http://127.0.0.1:15380/
+          cat /tmp/ingress.h
+          grep -qi '^HTTP/1.1 200' /tmp/ingress.h
+          grep -qi '^x-frame-options: SAMEORIGIN' /tmp/ingress.h
+          grep -qi "^content-security-policy: .*frame-ancestors 'self'" /tmp/ingress.h
+
+      - name: Monitoring API port answers 403 for everything outside the allow-list
+        run: |
+          set -euo pipefail
+          paths=(
+            "/"
+            "/index.html"
+            "/api/user/login?user=admin&pass=x"
+            "/api/user/createToken?user=admin&pass=x&tokenName=x"
+            "/api/user/logout"
+            "/api/admin/sessions/list"
+            "/api/admin/sessions/createToken?user=admin&tokenName=x"
+            "/api/settings/get"
+            "/api/settings/backup"
+            "/api/zones/list"
+            "/api/logs/list"
+            "/api/dashboard/stats/getTop?type=LastHour&statsType=TopClients"
+            "/api/dashboard/stats/deleteAll"
+            "/api/dashboard/metrics/text"
+            "/api/getStats?type=LastHour"
+            "/api/checkForUpdate"
+            "/api/dashboard/stats/get/"
+            "/API/dashboard/stats/get"
+          )
+          for path in "${paths[@]}"; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-a-real-token' "http://127.0.0.1:15382${path}")"
+            echo "${path} -> ${code}"
+            if [ "$code" != "403" ]; then
+              echo "::error::expected 403 for ${path}, got ${code}"
+              exit 1
+            fi
+          done
+
+      - name: Allow-listed paths reach Technitium, which rejects a bad token itself
+        run: |
+          set -euo pipefail
+          for path in "/api/dashboard/stats/get?type=LastHour&utc=true" "/api/user/checkForUpdate" "/api/user/session/get"; do
+            out="$(curl -sS -w '\n%{http_code}' -H 'Authorization: Bearer not-a-real-token' "http://127.0.0.1:15382${path}")"
+            code="${out##*$'\n'}"
+            body="${out%$'\n'*}"
+            status="$(printf '%s' "$body" | jq -r '.status // "no-status"')"
+            echo "${path} -> HTTP ${code}, status ${status}"
+            if [ "$code" != "200" ] || [ "$status" != "invalid-token" ]; then
+              echo "::error::expected HTTP 200 with status invalid-token for ${path}"
+              exit 1
+            fi
+          done
+
+      - name: A real token works through the allow-list (header and query form), the fence still holds, the log is clean
+        run: |
+          set -euo pipefail
+          PW="$(docker logs technitium-smoke 2>&1 | sed -n 's/.*Initial Technitium admin password: //p' | head -n1 | tr -d '\r')"
+          if [ -z "$PW" ]; then
+            echo "::error::could not read the first-run admin password from the container log"
+            exit 1
+          fi
+          # Token creation is deliberately not reachable on the monitoring port.
+          # CI mints one through the Ingress port, which Supervisor never maps
+          # to a host; here it is published only for this smoke test.
+          TOKEN="$(curl -sS -G --data-urlencode "user=admin" --data-urlencode "pass=${PW}" --data-urlencode "tokenName=ci-smoke" http://127.0.0.1:15380/api/user/createToken | jq -r '.token // empty')"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::createToken through the Ingress port returned no token"
+            exit 1
+          fi
+          echo "::add-mask::${TOKEN}"
+
+          stats="$(curl -sS -H "Authorization: Bearer ${TOKEN}" 'http://127.0.0.1:15382/api/dashboard/stats/get?type=LastHour&utc=true')"
+          echo "stats (Bearer): status=$(printf '%s' "$stats" | jq -r .status) totalQueries=$(printf '%s' "$stats" | jq -r '.response.stats.totalQueries')"
+          printf '%s' "$stats" | jq -e '.status == "ok" and (.response.stats.totalQueries | type) == "number"' >/dev/null
+
+          stats_q="$(curl -sS "http://127.0.0.1:15382/api/dashboard/stats/get?type=LastDay&token=${TOKEN}")"
+          echo "stats (?token= legacy form): status=$(printf '%s' "$stats_q" | jq -r .status)"
+          printf '%s' "$stats_q" | jq -e '.status == "ok"' >/dev/null
+
+          session="$(curl -sS -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:15382/api/user/session/get)"
+          echo "session: status=$(printf '%s' "$session" | jq -r .status) username=$(printf '%s' "$session" | jq -r .username)"
+          printf '%s' "$session" | jq -e '.status == "ok" and .username == "admin"' >/dev/null
+
+          # Outbound reachability of Technitium's update server is not under
+          # this test's control; Technitium answers status ok either way
+          # (updateAvailable false on failure), so only the envelope is checked.
+          update="$(curl -sS -H "Authorization: Bearer ${TOKEN}" http://127.0.0.1:15382/api/user/checkForUpdate)"
+          echo "update: status=$(printf '%s' "$update" | jq -r .status) updateAvailable=$(printf '%s' "$update" | jq -r '.response.updateAvailable')"
+          printf '%s' "$update" | jq -e '.status == "ok"' >/dev/null
+
+          # Even an admin token opens nothing else on this port.
+          for path in "/api/zones/list" "/api/settings/get" "/api/admin/sessions/list"; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "http://127.0.0.1:15382${path}")"
+            echo "admin token on ${path} -> ${code}"
+            [ "$code" = "403" ] || { echo "::error::expected 403 for ${path} with a valid admin token"; exit 1; }
+          done
+
+          # Access log: both listener values present, the legacy query token
+          # redacted, and the token value itself nowhere in the file.
+          docker exec technitium-smoke cat /data/log/nginx/web_console_access.log > /tmp/access.log
+          echo "access log lines: $(wc -l < /tmp/access.log)"
+          grep -q '"listener":"monitoring_api"' /tmp/access.log
+          grep -q '"listener":"ingress"' /tmp/access.log
+          grep -q '"uri":"/api/dashboard/stats/get?type=LastDay&token=REDACTED"' /tmp/access.log
+          grep -q '"uri":"/api/user/login?user=admin&pass=REDACTED"' /tmp/access.log
+          if grep -q -F "${TOKEN}" /tmp/access.log; then
+            echo "::error::the token value appears in the access log"
+            exit 1
+          fi
+          tail -n 3 /tmp/access.log
+
+      - name: Monitoring API rate limit answers 429 under a burst
+        run: |
+          set -euo pipefail
+          codes=""
+          for i in $(seq 1 40); do
+            codes="${codes} $(curl -sS -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-a-real-token' http://127.0.0.1:15382/api/user/session/get)"
+          done
+          echo "${codes}"
+          case "${codes}" in
+            *429*) echo "rate limit engaged" ;;
+            *) echo "::error::no 429 seen in a burst of 40 requests"; exit 1 ;;
+          esac
 
       - name: Dump logs on failure
         if: failure()

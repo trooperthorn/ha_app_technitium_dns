@@ -128,11 +128,13 @@ export DNS_SERVER_WEB_SERVICE_LOCAL_ADDRESSES="127.0.0.1"
 export DNS_SERVER_WEB_SERVICE_REVERSE_PROXY_ADDRESSES="127.0.0.1"
 
 # --- Web console access log (SOC audit tracking) --------------------------
-# nginx.conf writes one JSON line per web console request here, including
-# the Home Assistant user identity Ingress attaches to the request (not
-# just an IP -- every request nginx sees comes from the Ingress gateway
-# itself, so the IP alone would not distinguish users). This directory must
-# exist before nginx starts, or nginx fails to open the log file. See
+# nginx.conf writes one JSON line per request here from both of its
+# listeners, tagged with a `listener` field: Ingress lines carry the Home
+# Assistant user identity Ingress attaches to the request (not just an IP
+# -- every Ingress request nginx sees comes from the Ingress gateway
+# itself, so the IP alone would not distinguish users); monitoring API
+# lines (port 5382) carry the LAN client address instead. This directory
+# must exist before nginx starts, or nginx fails to open the log file. See
 # docs/operations.md, "Web console access log for SOC audit tracking".
 NGINX_LOG_DIR="/data/log/nginx"
 ACCESS_LOG="${NGINX_LOG_DIR}/web_console_access.log"
@@ -170,7 +172,11 @@ EOF
     done
 ) &
 
-log_info "Starting the Ingress reverse proxy (nginx) on port 5380."
+# nginx always listens on both ports inside the container; 5382 is only
+# reachable from the LAN once the operator maps it under ports: in
+# config.yaml (off by default). See docs/operations.md, "Monitoring API
+# port for Observe or other tools".
+log_info "Starting nginx: Ingress reverse proxy on port 5380, read-only monitoring API on port 5382 (LAN-reachable only if mapped in this app's Network settings)."
 nginx
 
 log_info "Handing off to Technitium DNS Server (config directory: ${CONFIG_DIR})."

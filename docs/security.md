@@ -22,6 +22,14 @@ Net: 5 (base) + 2 (`ingress: true`) = 7, clamped to the documented 1-6 scale's
 maximum, so this app's declared rating is 6 out of 6 -- the ceiling. Ingress
 is the only modifier this app trips.
 
+`ports:` mappings are not in that table at all, including the `5382/tcp`
+monitoring listener added on 2026-10-10: the rating scores privileges
+granted to the container, not which container ports an operator publishes.
+The rating therefore stays 6 whether or not 5382 is mapped. That is a
+statement about the Supervisor's scoring, not about exposure; the actual LAN
+exposure once that port is mapped is stated in "Read-only monitoring API
+listener (port 5382, off by default)" below.
+
 ## Additional encrypted-DNS ports
 
 `technitium_dns/config.yaml` also declares `853/tcp` (DoT), `443/tcp` (DoH),
@@ -90,6 +98,61 @@ nginx also writes a per-request access log naming the authenticated Home
 Assistant user for every web console request, for Sean's SOC audit
 tracking; see docs/operations.md, "Web console access log for SOC audit
 tracking", for the log's location, shape, and retention.
+
+## Read-only monitoring API listener (port 5382, off by default)
+
+As of `2026.10.10.1`, nginx has a second `server` block on container port
+5382 (`technitium_dns/nginx.conf`, "Monitoring API"). It exists so Observe,
+or another LAN monitor that can hold a token but not a Home Assistant
+session, can poll Technitium's dashboard counters and update check. It is
+not the web console and does not serve it: the console stays reachable only
+through Ingress on 5380, exactly as above. See docs/decisions.md, "Read-only
+monitoring API on a second listener, not a mapped console port", for the
+alternatives that were rejected.
+
+The boundary, in the order a request meets it, with each control labeled:
+
+| Layer | Control | Status |
+| --- | --- | --- |
+| Reachability | `config.yaml` declares `5382/tcp: null`. Nothing outside the container can reach the listener until the operator maps it in the app's Network settings. | enforced by Supervisor; off by default |
+| Source address | nginx `allow` for RFC 1918, RFC 4193 ULA, link-local, and loopback sources; `deny all` otherwise (403). A port-forward from the internet to the mapped host port exposes nothing even with a valid token. | enforced by nginx; defense in depth, assumes `$remote_addr` is the real client (Docker DNAT), not yet observed on a live HAOS host |
+| Path | Three exact-match locations are proxied: `/api/dashboard/stats/get`, `/api/user/checkForUpdate`, `/api/user/session/get`. `location /` answers 403 for everything else: `/api/user/login`, token creation, settings, zones, logs, backups, the console pages, the obsolete `/api/getStats` and `/api/checkForUpdate` aliases, case and trailing-slash variants. Each `proxy_pass` names its upstream path literally, so Technitium can only receive one of those three paths. | enforced by nginx; exercised in CI |
+| Rate | `limit_req` at 2 requests/second per source address, burst 10, HTTP 429 beyond that. | enforced by nginx; exercised in CI |
+| Authentication | Technitium's own. The `Authorization: Bearer` header and the query string pass through untouched; Technitium validates the token on every call and answers `"status":"invalid-token"` when it is wrong or expired. nginx holds no secret and performs no authentication. | enforced by Technitium |
+| Authorization | Technitium's per-section permissions. `Get Stats` requires Dashboard: View; the other two need only a valid session. A token carries its user's permissions, so the documented setup is a dedicated user with Dashboard: View and nothing else. Even an admin's token cannot reach a write API through this listener, because the path fence refuses it first. | enforced by Technitium; the least-privilege user is the operator's responsibility |
+| Audit | Every request is one JSON line in the SOC access log with `"listener":"monitoring_api"` and the client address; `token=` and `pass=` query values are redacted. | enforced by nginx; exercised in CI |
+
+What the listener deliberately does not do: no TLS (plain HTTP, same as the
+upstream default Observe assumes with `https: false`), no authentication of
+its own, no WebSocket upgrade, no frame-header rewriting. A token sent to
+this port crosses the LAN in cleartext on every poll, readable by anything
+on that path; Observe's own threat model labels the same fact advisory for
+Home Assistant and Technitium alike. The mitigations are the ones already
+in that table: a token scoped to a read-only user, and keeping the path
+short and trusted.
+
+LAN exposure once mapped, stated plainly: any host that can reach the Home
+Assistant host on the mapped port can attempt those three calls. Without a
+valid token it learns only that the port answers `invalid-token` (and the
+403 body for other paths); with a stolen token it can read the dashboard
+counters, the update status, and that token's own session info, rate
+limited, and nothing else. Recommended: a firewall rule on the gateway that
+allows only the monitoring host (ideally on a management VLAN) to reach the
+Home Assistant host on that TCP port and blocks it from every other
+network. docs/operations.md, "Forcing all client DNS through this server",
+already describes where such rules live on Sean's UCG Fiber (Settings >
+Policy Engine); the monitoring-port rule is the same Firewall Rule type
+with Destination = the Home Assistant host, Port = the mapped host port.
+
+Verification status. The CI smoke test runs the built image with a plain
+`docker run` and checks `nginx -t`, the unchanged Ingress response, the 403
+fence, a bad token reaching Technitium, a real token through the allow-list
+(header and query form), the rate limit, and the log fields. It does not
+run under Supervisor, so three things are not verified on a live Home
+Assistant OS host: that `$remote_addr` there is the LAN client address, that
+the enforced AppArmor profile stays quiet (no rule change was needed; see
+`technitium_dns/apparmor.txt`), and Observe polling the mapped port end to
+end. docs/operations.md gives the curl calls for the first live check.
 
 ## First-run admin password
 
@@ -202,4 +265,8 @@ CVE disclosures independently.
 This app has no control API of its own (unlike `ha_app_kiosk`'s
 `rest_server.py`): every administrative action goes through Technitium's own
 web console and its own authentication, reached only via Ingress as
-described above. There is no second command surface for this app to secure.
+described above. The only other surface is the read-only monitoring API
+listener on 5382 (off by default), which can read three things and change
+nothing; see "Read-only monitoring API listener (port 5382, off by
+default)" above. There is no write path into this app other than the
+Ingress-authenticated console.

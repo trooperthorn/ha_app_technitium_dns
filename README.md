@@ -30,7 +30,8 @@ Then install "Technitium DNS Server" from the Local apps section.
 - [docs/security.md](docs/security.md): security rating, trust boundaries,
   and what is and is not verified about the upstream image.
 - [docs/operations.md](docs/operations.md): first-run password retrieval,
-  the option-change limitation, port 53 conflicts, and backup/restore.
+  the option-change limitation, port 53 conflicts, backup/restore, and the
+  optional read-only monitoring API port for Observe or other tools.
 - [SECURITY.md](SECURITY.md): vulnerability reporting for this repository.
 
 ## Status
