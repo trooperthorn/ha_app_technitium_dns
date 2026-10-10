@@ -59,8 +59,9 @@ that conflict is resolved. See docs/operations.md.
 | 853/tcp | DNS-over-TLS (DoT) | Off (`host: null`) | Standard DoT port. Enable in Technitium's own web console with a certificate first; see "Enabling encrypted DNS for clients" in docs/operations.md. |
 | 443/tcp | DNS-over-HTTPS (DoH) | Off (`host: null`) | Standard DoH port. Same enablement step as DoT. |
 | 443/udp | DNS-over-QUIC (DoQ) | Off (`host: null`) | Standard DoQ port. Same enablement step as DoT. |
+| 5382/tcp | Read-only monitoring API | Off (`host: null`) | Not DNS and not the web console: three read-only Technitium API paths for a monitor such as Observe, behind Technitium's own user token. Map it (typically to host port 5380) only if you run such a monitor; see "Monitoring API port for Observe or other tools" in docs/operations.md. |
 
-All four extra ports use their standard, well-known numbers deliberately, so
+The four DNS ports use their standard, well-known numbers deliberately, so
 that a client that already knows how to do DoT/DoH/DoQ against any other
 resolver (most current phone, desktop, and browser DNS clients) can point at
 this server with no non-standard port entered anywhere. Mapping a port here
@@ -83,3 +84,20 @@ docs/operations.md, "If you installed before 2026.09.15.7: reset the
 persisted config once" -- the Ingress panel did not work at all before that
 version, and updating on top of the old configuration needs one manual
 reset step.
+
+## Monitoring API port (optional, off by default)
+
+Since `2026.10.10.1` the app also declares container port `5382/tcp`, not
+mapped by default. It is for a monitoring tool (Observe, for example) that
+wants Technitium's dashboard counters and update status but cannot log in
+through Home Assistant. When you map it, nginx serves only three read-only
+Technitium API paths on it (dashboard stats, update check, session info)
+and answers 403 to everything else, including the login and any
+configuration path; Technitium still requires one of its own user tokens
+on every call, so create a dedicated Technitium user with only Dashboard:
+View and a token for it. The web console is not reachable on this port and
+stays Ingress-only. Once mapped the port is reachable from your LAN, so
+restrict it to the monitoring host with a firewall rule. Setup steps,
+the exact Observe snippet, and what the port does and does not answer are
+in docs/operations.md, "Monitoring API port for Observe or other tools";
+the security boundary is in docs/security.md.

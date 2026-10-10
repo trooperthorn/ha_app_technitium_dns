@@ -1,6 +1,6 @@
 name: "Technitium DNS Server"
 description: "Full-featured, privacy-focused authoritative and recursive DNS server"
-version: "2026.09.23.1"
+version: "2026.10.10.1"
 slug: "technitium_dns"
 init: false
 startup: services
@@ -34,18 +34,33 @@ arch:
 # only makes the LAN-facing side available once that in-app step is done;
 # it does nothing on its own. See docs/decisions.md for why these default to
 # off rather than on.
+#
+# 5382/tcp is the read-only monitoring API listener (added 2026-10-10, see
+# docs/decisions.md, "Read-only monitoring API on a second listener"). It is
+# NOT the web console: nginx serves only three exact read-only API paths on
+# it (dashboard stats, update check, session info) and answers 403 to every
+# other path, and Technitium's own user token is still required on each
+# call. It exists so Observe (or another LAN monitor) can poll Technitium
+# without a Home Assistant Ingress session, which a monitor cannot hold.
+# Off by default (host: null); the operator maps it, typically to host port
+# 5380, to turn it on. The console port 5380 itself stays Ingress-only and
+# is still never listed here. Mappings under ports: are not scored by the
+# apps security rating; see docs/security.md for the LAN exposure once
+# mapped and the firewall recommendation.
 ports:
   53/tcp: 53
   53/udp: 53
   853/tcp: null
   443/tcp: null
   443/udp: null
+  5382/tcp: null
 ports_description:
   53/tcp: "DNS over TCP (standard port 53). Always needed for this server to act as a resolver."
   53/udp: "DNS over UDP (standard port 53). Always needed for this server to act as a resolver."
   853/tcp: "DNS-over-TLS (DoT), standard port 853. Off (host: null) until enabled with a certificate in Technitium's own web console; see docs/operations.md."
   443/tcp: "DNS-over-HTTPS (DoH), standard port 443. Off (host: null) until enabled with a certificate in Technitium's own web console; see docs/operations.md."
   443/udp: "DNS-over-QUIC (DoQ), standard port 443. Off (host: null) until enabled with a certificate in Technitium's own web console; see docs/operations.md."
+  5382/tcp: "Read-only monitoring API for Observe or similar tools. Off (host: null) by default; map it (typically to host port 5380) to turn it on. Serves only an allow-list of read-only Technitium API paths (dashboard stats, update check, session info); every other path answers 403, including login, token creation, settings, zones, and the console pages. Technitium's own user token is still required on every call, so create a dedicated Technitium user with only Dashboard: View and a token for it. The web console itself stays Ingress-only and is never served on this port. See docs/operations.md, 'Monitoring API port for Observe or other tools'."
 
 # Web console is Ingress-only; see docs/decisions.md and docs/security.md.
 ingress: true

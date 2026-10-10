@@ -17,13 +17,13 @@ new version.
 
 Like `prepare-release.yml`, this workflow mints a short-lived token from the
 release GitHub App: repository variable `RELEASE_AUTOMATION_CLIENT_ID` and
-secret `RELEASE_AUTOMATION_PRIVATE_KEY`. **Neither is configured on this
-repository yet** (`gh variable list` / `gh secret list` both return nothing as
-of 2026-09-22) -- the App must be installed here (see
-`~/.claude/skills/ha-dev-current` inventory notes on the other repos it is
-already installed on for the install/verify steps) before this workflow can
-open PRs; until then it fails at the "Verify release-automation credentials
-are configured" step whenever it detects a change, without touching the repo.
+secret `RELEASE_AUTOMATION_PRIVATE_KEY`. Both are configured on this
+repository (`gh variable list` shows the variable set 2026-09-22 and
+`gh secret list` shows the secret set 2026-09-23; checked 2026-10-10), and
+the upstream-sync PRs of 2026-09-23 through 2026-10-05 were opened by it.
+If the credentials are ever removed, this workflow fails at the "Verify
+release-automation credentials are configured" step whenever it detects a
+change, without touching the repo.
 
 Manual check or apply, without waiting for the schedule:
 
@@ -423,23 +423,207 @@ DNAT redirect in step 2) achieve most of the same practical outcome --
 every client resolves through this server -- without needing a public CA
 relationship at all.
 
+## Monitoring API port for Observe or other tools
+
+Since `2026.10.10.1` this app can expose a small, read-only slice of
+Technitium's HTTP API on container port `5382/tcp` for a LAN monitor such as
+Observe (`C:\Users\sean.LAB\repos\observe`). The port is declared in
+`technitium_dns/config.yaml` with `host: null`, so nothing listens on the
+LAN until you map it. The web console is not served on this port and stays
+Ingress-only; what nginx serves here is exactly three Technitium API paths,
+and Technitium still checks its own user token on every call. The design
+and the trust boundary are in docs/decisions.md, "Read-only monitoring API
+on a second listener", and docs/security.md, "Read-only monitoring API
+listener".
+
+### What is and is not reachable on this port
+
+| Request | Answer |
+| --- | --- |
+| `GET /api/dashboard/stats/get?type=LastHour&utc=true` (also `LastDay`) | Proxied to Technitium. Needs a token whose user has Dashboard: View. This is Observe `mode: stats`. |
+| `GET /api/user/checkForUpdate` | Proxied to Technitium. Needs any valid token. This is Observe `mode: update`. Technitium caches the upstream answer for an hour. |
+| `GET /api/user/session/get` | Proxied to Technitium. Needs any valid token; returns that token's own username and permission table. Use it to check a token before configuring a monitor. |
+| Anything else: `/`, the console pages, `/api/user/login`, `/api/user/createToken`, `/api/admin/...`, `/api/settings/...`, `/api/zones/...`, `/api/logs/...`, `/api/dashboard/stats/getTop`, the obsolete `/api/getStats` and `/api/checkForUpdate`, trailing-slash or upper-case variants | `403 Forbidden` from nginx. Technitium never sees the request. |
+| Any of the three paths from a public (non-private) source address | `403 Forbidden` from nginx. |
+| More than about 2 requests/second from one address (burst of 10 allowed) | `429 Too Many Requests` from nginx. |
+| Any of the three paths with a missing, wrong, or expired token | HTTP 200 with `{"status":"invalid-token", ...}` from Technitium. |
+| `/api/dashboard/stats/get` with a token whose user lacks Dashboard: View | HTTP 200 with `{"status":"error", "errorMessage": "Access was denied." ...}` from Technitium (message text is Technitium's; not re-verified against 15.6.0 word for word). |
+
+POST with form data works the same way as GET for the three paths
+(Technitium maps both); nothing here needs POST.
+
+### 1. Map the port
+
+In Home Assistant: Settings > Add-ons (Apps) > Technitium DNS Server >
+Configuration, Network section. Set the host port for `5382/tcp` to `5380`
+(recommended: it is the port number Technitium's own documentation uses,
+and Observe's discovery scans 5380 by default) or any other free host port,
+save, and restart the app. The log should show
+`Starting nginx: Ingress reverse proxy on port 5380, read-only monitoring
+API on port 5382 ...` either way; the mapping is what makes 5382 reachable.
+
+Nothing about the existing console changes: it is still opened from the
+sidebar through Ingress, and container port 5380 is still not mapped.
+
+### 2. Create a Technitium user with only Dashboard: View, and a token
+
+Do this in Technitium's own console (through the Ingress panel), logged in
+as an administrator. The section names below are the ones Technitium's
+API documentation uses for the same operations (`/api/admin/users/create`,
+`/api/admin/permissions/set`, `/api/admin/sessions/createToken`, read at
+upstream tag `v15.6.0`); if a menu label differs in the live console, the
+operation is the same.
+
+1. **Administration > Users**: add a user, for example `observe`, with a
+   long random password (it is never typed again after this; the token is
+   what the monitor uses). Leave it out of the Administrators group.
+2. **Administration > Permissions > Dashboard**: grant that user View only
+   (no Modify, no Delete). Then look at every other section (Zones, Cache,
+   Allowed, Blocked, Apps, DnsClient, Settings, DhcpServer, Administration,
+   Logs) and confirm neither the user nor any group it belongs to has
+   anything there. A new user is normally in the `Everyone` group; check
+   what `Everyone` is granted in each section rather than assuming it is
+   empty, and remove the user from that group or trim the group if it has
+   more than Dashboard: View.
+3. **Administration > Sessions > Create Token**: user `observe`, a token
+   name such as `observe-monitor`. Copy the token now; Technitium shows it
+   once. It does not expire; revoke it from the same Sessions list when it
+   is no longer needed.
+
+A token carries exactly its user's permissions, so even if this token
+leaked, the path fence on 5382 and the user's permissions together limit it
+to reading the dashboard counters, the update status, and its own session
+info.
+
+### 3. Check the token from the monitoring host
+
+Replace `192.0.2.10` with the Home Assistant host's LAN address and `5380`
+with the host port you mapped. These run from the machine that will run
+Observe, so they also prove the firewall path.
+
+```bash
+TOKEN='paste-the-token-here'
+# Token valid? Shows the user and its Dashboard permission.
+curl -sS -H "Authorization: Bearer $TOKEN" "http://192.0.2.10:5380/api/user/session/get" | jq '{username, dashboard: .info.permissions.Dashboard, status}'
+# The call Observe makes.
+curl -sS -H "Authorization: Bearer $TOKEN" "http://192.0.2.10:5380/api/dashboard/stats/get?type=LastHour&utc=true" | jq '{status, totalQueries: .response.stats.totalQueries, totalServerFailure: .response.stats.totalServerFailure}'
+# The fence: must be 403, token or not.
+curl -sS -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" "http://192.0.2.10:5380/api/zones/list"
+```
+
+Expected: `"status": "ok"` on the first two with `canView: true` under
+`dashboard`, and `403` on the third. `"status": "invalid-token"` means the
+token is wrong or was revoked; `"status": "error"` with an access-denied
+message on the stats call means step 2 did not grant Dashboard: View.
+
+### 4. Observe configuration
+
+The monitor's `port` is the **host** port from step 1, not 5382, and
+`https: false` because this listener is plain HTTP (nginx terminates no TLS
+here; see docs/security.md for what that means on the LAN path). Field
+names are from `observe/config.py` (`TechnitiumMonitor`,
+`TechnitiumCredential`) and `config.example.yaml`, read 2026-10-10.
+
+```yaml
+credentials:
+  technitium-token:
+    type: technitium
+    token: ${TECHNITIUM_TOKEN}     # the token from step 2, supplied via .env
+
+monitors:
+  - name: Technitium SERVFAIL rate
+    group: dns
+    type: technitium
+    host: 192.0.2.10               # Home Assistant host LAN address
+    port: 5380                     # the HOST port 5382/tcp is mapped to
+    https: false
+    credential: technitium-token
+    mode: stats
+    range: LastHour
+    thresholds: {direction: above, warn: 2, crit: 10}
+
+  - name: Technitium update available
+    group: dns
+    type: technitium
+    host: 192.0.2.10
+    port: 5380
+    https: false
+    credential: technitium-token
+    mode: update
+    interval: 3600                 # Technitium caches the upstream answer for an hour anyway
+    depends_on: [Technitium SERVFAIL rate]
+```
+
+Leave `token_in_query` at its default (`false`). Technitium 15.0 and later,
+including the 15.6.0 this app pins, accept `Authorization: Bearer <token>`
+as the documented form; the `?token=` query form is only a compatibility
+fallback, and it would put the token in the URL. This listener passes both
+forms through unchanged and redacts `token=` in its own log, so nothing
+breaks if `token_in_query: true` is ever needed, but there is no reason to
+set it against this version.
+
+How Observe's failure messages map onto this listener:
+
+| Observe says | Meaning here |
+| --- | --- |
+| `authentication rejected (HTTP 403)` | nginx refused it: the path is not allow-listed, or the source address is not private. Check the access log line's `uri` and `remote_addr`. |
+| `authentication rejected (invalid-token)` | nginx passed it through; Technitium rejected the token. |
+| `Technitium returned status 'error': Access was denied.` (or similar) | Token valid, user lacks Dashboard: View. |
+| `HTTPStatusError: ... 429 ...` | Rate limit. Something is polling far faster than once a minute from that address. |
+| connection refused or timeout | Port not mapped, wrong host port, app not running, or a firewall between the monitoring host and the Home Assistant host. |
+
+### 5. Firewall rule (recommended)
+
+Once mapped, the port is reachable from any network that can reach the
+Home Assistant host. Add a gateway rule that allows only the monitoring
+host (ideally on the management VLAN) to reach the Home Assistant host on
+that TCP port and blocks it from every other VLAN. On Sean's UCG Fiber this
+is a Firewall Rule in Settings > Policy Engine, the same place as the DNS
+rules in "Forcing all client DNS through this server" above: Action
+`Allow`, Source = the Observe host, Destination = the Home Assistant host,
+Port = the mapped host port, placed above a matching `Block` rule with
+Source = Any. Use the Policy Table's hit counters to confirm both rules are
+matched.
+
+### Turning it off
+
+Set the `5382/tcp` host port back to blank/null in the app's Network
+settings and restart; then revoke the token in Technitium's Administration
+> Sessions list. Either step alone is enough to stop a monitor; do both.
+
+### Audit trail
+
+Every request on this port is one line in
+`/data/log/nginx/web_console_access.log` with `"listener":"monitoring_api"`
+and the LAN client's address in `remote_addr`; see the next section for the
+line shape and retention.
+
 ## Web console access log for SOC audit tracking
 
-Every request through the Ingress-facing web console is logged as one JSON
-line to `/data/log/nginx/web_console_access.log`, including the Home
+Every request through the Ingress-facing web console, and every request on
+the monitoring API port if it is mapped, is logged as one JSON line to
+`/data/log/nginx/web_console_access.log`. Both kinds of line have the same
+fields; the `listener` field (`ingress` or `monitoring_api`, added in
+`2026.10.10.1`) says which one wrote it. Ingress lines include the Home
 Assistant user identity Ingress attaches after authenticating the viewer
 (`user_id`, `user_name`, `user_display_name` fields, sourced from the
 `X-Remote-User-*` headers Ingress adds), the request method and path,
-response status, and timing. Example line shape:
+response status, and timing. Example line shapes:
 
 ```json
-{"time":"2026-09-15T18:02:11+00:00","remote_addr":"172.30.32.2","user_id":"abc123","user_name":"homeadmin","user_display_name":"HomeAdmin","method":"GET","uri":"/","status":200,"body_bytes_sent":4021,"request_time":0.014,"user_agent":"Mozilla/5.0 ..."}
+{"time":"2026-09-15T18:02:11+00:00","listener":"ingress","remote_addr":"172.30.32.2","user_id":"abc123","user_name":"homeadmin","user_display_name":"HomeAdmin","method":"GET","uri":"/","status":200,"body_bytes_sent":4021,"request_time":0.014,"user_agent":"Mozilla/5.0 ..."}
+{"time":"2026-10-10T14:00:03+00:00","listener":"monitoring_api","remote_addr":"192.0.2.44","user_id":"","user_name":"","user_display_name":"","method":"GET","uri":"/api/dashboard/stats/get?type=LastHour&utc=true","status":200,"body_bytes_sent":1874,"request_time":0.006,"user_agent":"python-httpx/0.28.1"}
 ```
 
-`remote_addr` is always the Ingress gateway's own address
-(`172.30.32.2`), not the browser's -- every request nginx sees arrives from
-there, so the `user_*` fields are the actual identifying information for
-"who accessed this," not the IP.
+On Ingress lines `remote_addr` is always the Ingress gateway's own address
+(`172.30.32.2`), not the browser's -- every Ingress request nginx sees
+arrives from there, so the `user_*` fields are the actual identifying
+information for "who accessed this," not the IP. On monitoring API lines it
+is the other way round: `remote_addr` is the LAN client (the request comes
+straight through Docker's port mapping), and the `user_*` fields are
+deliberately empty rather than copied from request headers that nothing
+authenticates on that path. Any `token=` or `pass=` value in a monitoring
+line's query string is written as `REDACTED`.
 
 Retention is controlled by the `web_console_access_log_retention_days`
 option (default 90 days) and, unlike this app's other options, applies on

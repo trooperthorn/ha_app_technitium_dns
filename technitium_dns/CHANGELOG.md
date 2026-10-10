@@ -1,20 +1,55 @@
 # Changelog
 
+## 2026.10.10.1
+- Added an optional read-only monitoring API listener on container port
+  `5382/tcp` (`host: null`, off by default) so Observe or another LAN
+  monitor can poll Technitium's dashboard stats and update check without a
+  Home Assistant Ingress session. nginx proxies exactly three paths
+  (`/api/dashboard/stats/get`, `/api/user/checkForUpdate`,
+  `/api/user/session/get`) to Technitium and answers 403 for everything
+  else, including login, token creation, settings, zones, and the console
+  pages. Technitium still authenticates every call with its own user token
+  (`Authorization: Bearer <token>`, or the legacy `?token=` form). The
+  listener is rate limited per source address, accepts only private source
+  addresses, and logs to the same SOC access log with
+  `"listener":"monitoring_api"`. The web console stays Ingress-only and is
+  not served on this port. See docs/operations.md, "Monitoring API port for
+  Observe or other tools", docs/security.md, and docs/decisions.md.
+- The SOC access log gained a `listener` field (`ingress` or
+  `monitoring_api`) on every line; Ingress lines are otherwise unchanged.
+  Monitoring-listener lines log the LAN client address and redact any
+  `token=` or `pass=` value in the query string.
+- The CI smoke test now also runs `nginx -t` inside the started container,
+  checks the Ingress listener still answers 200 with same-origin framing
+  headers, and exercises the monitoring listener end to end: the 403 fence,
+  a bad token reaching Technitium, a real token through the allow-list in
+  both header and query form, the rate limit, and the log fields.
+- Technitium DNS Server 15.5.1 -> 15.6.0 (automated upstream sync,
+  2026-10-05). Review the runtime-overlay rationale comments in the
+  Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether
+  technitium/dns-server:15.6.0 still bundles a vulnerable .NET runtime, and
+  whether the overlay's own pinned aspnet patch version is still the newest
+  available.
+- dotnet/aspnet overlay stage digest refreshed by Dependabot (2026-10-08).
+
+## 2026.09.23.1
+- Added the automated upstream sync (`sync-upstream.yml` and
+  `scripts/sync_upstream.py`): checks Docker Hub daily for a newer
+  `technitium/dns-server` tag or digest and opens an auto-merging PR. See
+  docs/operations.md, "Automated upstream sync".
+- Technitium DNS Server 15.4.0 -> 15.5.0, then 15.5.0 -> 15.5.1 (Dependabot
+  and the upstream sync). Review the runtime-overlay rationale comments in
+  the Dockerfile ("Runtime overlay to clear High CVEs") against each new
+  upstream image.
+- dotnet/aspnet overlay stage digest refreshed by Dependabot.
+
 ## 2026.09.15.9
 - Promoted `stage` from `experimental` to `stable`: Sean confirmed a real
   installation running this app as the household DNS resolver, resolving
   correctly. See docs/decisions.md. This does not itself upgrade the
   separately-stated verification status of the Ingress fix, SOC access
   logging, or AppArmor enforcement -- see their own entries.
-
-## Unreleased
--- Technitium DNS Server 15.5.1 -> 15.6.0
-- Review the runtime-overlay rationale comments in the Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether technitium/dns-server:15.6.0 still bundles a vulnerable .NET runtime, and whether the overlay's own pinned aspnet patch version is still the newest available.
-- Technitium DNS Server 15.5.0 -> 15.5.1
-- Review the runtime-overlay rationale comments in the Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether technitium/dns-server:15.5.1 still bundles a vulnerable .NET runtime, and whether the overlay's own pinned aspnet patch version is still the newest available.
-- Technitium DNS Server 15.4.0 -> 15.5.0
-- Review the runtime-overlay rationale comments in the Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether technitium/dns-server:15.5.0 still bundles a vulnerable .NET runtime, and whether the overlay's own pinned aspnet patch version is still the newest available.
- Documentation only, no image/config change: added a worked example for a
+- Documentation only, no image/config change: added a worked example for a
   Quad9 global forwarder plus a Conditional Forwarder Zone to an internal
   Windows AD DNS server, and firewall/gateway guidance for forcing client
   DNS through this app. See docs/operations.md and docs/decisions.md.
