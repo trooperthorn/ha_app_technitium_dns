@@ -29,7 +29,7 @@
 # Technitium ships a release built against a current runtime.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.12@sha256:222759b391a1aaf241166672c8f99b2d4ada452e7b5319f3c6e8f265a37b5ad4 AS dotnet-runtime-patch
 
-FROM technitium/dns-server:15.6.0@sha256:1045db38fd2f2e4d9578f9168b7eb4862575469ed0ffc79e03f36bdc772a93b5
+FROM technitium/dns-server:15.6.1@sha256:e5474007d142d509c7de0d855132e3f0469bd6d5d77abf23dff5dad4e2975d09
 
 # Add the 10.0.12 shared frameworks alongside the existing ones, then
 # remove the vulnerable 10.0.9 version folders explicitly: a plain COPY over
