@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Technitium DNS Server 15.6.0 -> 15.6.1
+- Review the runtime-overlay rationale comments in the Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether technitium/dns-server:15.6.1 still bundles a vulnerable .NET runtime, and whether the overlay's own pinned aspnet patch version is still the newest available.
+
 ## 2026.10.10.1
 - Added an optional read-only monitoring API listener on container port
   `5382/tcp` (`host: null`, off by default) so Observe or another LAN
