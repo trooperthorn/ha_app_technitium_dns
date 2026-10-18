@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Technitium DNS Server 15.6.1 -> 15.6.2
+- Review the runtime-overlay rationale comments in the Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether technitium/dns-server:15.6.2 still bundles a vulnerable .NET runtime, and whether the overlay's own pinned aspnet patch version is still the newest available.
 - Technitium DNS Server 15.6.0 -> 15.6.1
 - Review the runtime-overlay rationale comments in the Dockerfile ("Runtime overlay to clear High CVEs"): confirm whether technitium/dns-server:15.6.1 still bundles a vulnerable .NET runtime, and whether the overlay's own pinned aspnet patch version is still the newest available.
 
