@@ -86,7 +86,7 @@ jobs:
             exit 1
           fi
 
-      - name: Confirm the .NET runtime overlay actually landed (10.0.12, no 10.0.9 left)
+      - name: Confirm the .NET runtime overlay actually landed (10.0.13, no 10.0.9 left)
         run: |
           set -euo pipefail
           docker exec technitium-smoke dotnet --list-runtimes
@@ -94,8 +94,8 @@ jobs:
             echo "::error::10.0.9 runtime is still present; the overlay in the Dockerfile did not remove it"
             exit 1
           fi
-          if ! docker exec technitium-smoke dotnet --list-runtimes | grep -q ' 10\.0\.12 '; then
-            echo "::error::10.0.12 runtime was not found; the overlay in the Dockerfile did not land"
+          if ! docker exec technitium-smoke dotnet --list-runtimes | grep -q ' 10\.0\.13 '; then
+            echo "::error::10.0.13 runtime was not found; the overlay in the Dockerfile did not land"
             exit 1
           fi
 
