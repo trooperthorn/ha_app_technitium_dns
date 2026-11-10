@@ -27,7 +27,7 @@
 # See docs/decisions.md, "Runtime overlay to clear High CVEs", for the CI
 # scan that surfaced this and how to re-verify or remove this stage once
 # Technitium ships a release built against a current runtime.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.14@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee AS dotnet-runtime-patch
+FROM mcr.microsoft.com/dotnet/aspnet:11.0.0@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242 AS dotnet-runtime-patch
 
 FROM technitium/dns-server:15.6.2@sha256:eb48ac5c135f4ab936b536f74f853d53e15ab39ef37fdbc9598a089b90d9f245
 
