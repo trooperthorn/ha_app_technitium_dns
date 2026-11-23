@@ -34,7 +34,7 @@
 # in 10.0.15"). technitium/dns-server:15.6.2 bundles 10.0.13 itself, so the
 # final stage below removes whatever shared framework versions the Technitium
 # image ships before copying this stage's in, rather than naming one version.
-FROM mcr.microsoft.com/dotnet/aspnet:11.0.0@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242 AS dotnet-runtime-patch
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.15@sha256:12b1135f5f8b3c0a214f2a680ff2033dff4f684f445d6c697d9524ceeb303586 AS dotnet-runtime-patch
 
 FROM technitium/dns-server:15.6.2@sha256:eb48ac5c135f4ab936b536f74f853d53e15ab39ef37fdbc9598a089b90d9f245
 
