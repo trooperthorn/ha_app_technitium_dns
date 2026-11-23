@@ -86,16 +86,28 @@ jobs:
             exit 1
           fi
 
-      - name: Confirm the .NET runtime overlay actually landed (10.0.13, no 10.0.9 left)
+      # The expected version is read from the overlay stage's own FROM line, so
+      # a Dependabot bump of that tag does not leave this check asserting a
+      # stale version.
+      - name: Confirm the .NET runtime overlay actually landed (only the overlay version is present)
         run: |
           set -euo pipefail
-          docker exec technitium-smoke dotnet --list-runtimes
-          if docker exec technitium-smoke dotnet --list-runtimes | grep -q ' 10\.0\.9 '; then
-            echo "::error::10.0.9 runtime is still present; the overlay in the Dockerfile did not remove it"
+          expected="$(sed -n 's/^FROM mcr\.microsoft\.com\/dotnet\/aspnet:\([0-9][0-9.]*\)@.* AS dotnet-runtime-patch$/\1/p' technitium_dns/Dockerfile)"
+          if [ -z "$expected" ]; then
+            echo "::error::Could not read the overlay runtime version from technitium_dns/Dockerfile"
             exit 1
           fi
-          if ! docker exec technitium-smoke dotnet --list-runtimes | grep -q ' 10\.0\.13 '; then
-            echo "::error::10.0.13 runtime was not found; the overlay in the Dockerfile did not land"
+          echo "expected runtime version: $expected"
+          runtimes="$(docker exec technitium-smoke dotnet --list-runtimes)"
+          echo "$runtimes"
+          for framework in Microsoft.NETCore.App Microsoft.AspNetCore.App; do
+            if ! echo "$runtimes" | grep -qF "$framework $expected "; then
+              echo "::error::$framework $expected was not found; the overlay in the Dockerfile did not land"
+              exit 1
+            fi
+          done
+          if echo "$runtimes" | grep -vF " $expected " | grep -q .; then
+            echo "::error::A runtime other than $expected is still present; the overlay in the Dockerfile did not remove it"
             exit 1
           fi
 
