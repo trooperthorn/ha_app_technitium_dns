@@ -27,26 +27,36 @@
 # See docs/decisions.md, "Runtime overlay to clear High CVEs", for the CI
 # scan that surfaced this and how to re-verify or remove this stage once
 # Technitium ships a release built against a current runtime.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.14@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee AS dotnet-runtime-patch
+#
+# 2026-11-22: the overlay tag is bumped by Dependabot within the 10.0 line.
+# 10.0.15 clears the High GHSA advisories Grype reports against
+# Microsoft.AspNetCore.App.Runtime.linux-x64 10.0.13 and 10.0.14 (all "fixed
+# in 10.0.15"). technitium/dns-server:15.6.2 bundles 10.0.13 itself, so the
+# final stage below removes whatever shared framework versions the Technitium
+# image ships before copying this stage's in, rather than naming one version.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.15@sha256:12b1135f5f8b3c0a214f2a680ff2033dff4f684f445d6c697d9524ceeb303586 AS dotnet-runtime-patch
 
 FROM technitium/dns-server:15.6.2@sha256:eb48ac5c135f4ab936b536f74f853d53e15ab39ef37fdbc9598a089b90d9f245
 
-# Add the 10.0.12 shared frameworks alongside the existing ones, then
-# remove the vulnerable 10.0.9 version folders explicitly: a plain COPY over
-# an existing directory merges files in rather than replacing the directory,
-# so the old 10.0.9 files would otherwise remain on disk (and still get
-# flagged by the vulnerability scan) even after 10.0.12 is added. .NET's own
-# framework resolution always accepts a newer patch within the same
-# major.minor, regardless of the application's rollForward setting, so
-# removing 10.0.9 once 10.0.12 is present does not require touching
-# Technitium's own runtimeconfig.json. Verify after building: `dotnet --info`
-# inside the container should report only 10.0.12 for both frameworks, and
-# the Security workflow's vulnerability scan should no longer list the
-# Microsoft.NETCore.App.Runtime.linux-x64 10.0.9 GHSA entries.
+# Replace the shared frameworks baked into the Technitium image with the
+# ones from the overlay stage. The bundled version folders are removed first
+# and by directory, not by version number: a plain COPY over an existing
+# directory merges files in rather than replacing the directory, so the
+# bundled (older, vulnerable) version folders would otherwise remain on disk
+# and still get flagged by the vulnerability scan. An earlier form of this
+# step removed only a hard-coded 10.0.9 folder, which silently stopped
+# matching once Technitium moved to 10.0.13. .NET's own framework resolution
+# always accepts a newer patch within the same major.minor, regardless of the
+# application's rollForward setting, so this does not require touching
+# Technitium's own runtimeconfig.json. Verify after building:
+# `dotnet --list-runtimes` inside the container should report only the
+# overlay stage's version for both frameworks (the Test workflow's smoke test
+# asserts this), and the Security workflow's vulnerability scan should list no
+# Microsoft.*.App.Runtime.linux-x64 entries for older versions.
+RUN rm -rf /usr/share/dotnet/shared/Microsoft.NETCore.App \
+    /usr/share/dotnet/shared/Microsoft.AspNetCore.App
 COPY --from=dotnet-runtime-patch /usr/share/dotnet/shared/Microsoft.NETCore.App /usr/share/dotnet/shared/Microsoft.NETCore.App
 COPY --from=dotnet-runtime-patch /usr/share/dotnet/shared/Microsoft.AspNetCore.App /usr/share/dotnet/shared/Microsoft.AspNetCore.App
-RUN rm -rf /usr/share/dotnet/shared/Microsoft.NETCore.App/10.0.9 \
-    && rm -rf /usr/share/dotnet/shared/Microsoft.AspNetCore.App/10.0.9
 
 ARG BUILD_VERSION
 ARG BUILD_ARCH
@@ -65,7 +75,15 @@ LABEL \
 # modules this config uses, with a smaller footprint than the full package.
 # logrotate rotates the web console access log; see docs/decisions.md, "Web
 # console access log for SOC audit tracking".
+#
+# apt-get upgrade applies the distro's own security updates to the OS
+# packages inherited from the pinned Technitium image, which is rebuilt far
+# less often than Ubuntu publishes fixes. Without it the Security workflow
+# fails on fixable findings in packages this app never installs itself
+# (2026-11-16: libbrotli1 CVE-2026-111497, High and KEV-listed, plus apt and
+# libapt-pkg6.0t64 CVE-2026-109518, High).
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends curl jq nginx-light logrotate \
     && rm -rf /var/lib/apt/lists/*
 
